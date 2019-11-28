@@ -1,3 +1,6 @@
+# dev dictionary
+dev
+
 # build artifacts
 .mypy_cache
 tjunlp.egg-info/
