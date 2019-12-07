@@ -11,17 +11,20 @@ import pickle
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 
+from torch.utils.data import Dataset, ConcatDataset
+
 from tjunlp.common.util import field_match
 from tjunlp.common.config import Config
 from tjunlp.common.checks import ConfigurationError
 from tjunlp.common.tqdm import Tqdm
-from tjunlp.core.instance import Instance
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_NON_PADDED_fieldS = ("*tags", "*labels")
 DEFAULT_PADDING_TOKEN = "<pad>"
+DEFAULT_PADDING_INDEX = 0
 DEFAULT_OOV_TOKEN = "<unk>"
+DEFAULT_OOV_INDEX = 1
 
 
 class _FieldDependentDefaultDict(defaultdict):
@@ -256,7 +259,7 @@ class Vocabulary(object):
 
     @classmethod
     def from_instances(cls,
-                       instances: Iterable[Instance],
+                       instances,  # Iterable[Instance], Dataset, ConcatDataset
                        create_fields: List[str],
                        min_count: Dict[str, int] = None,
                        max_vocab_size: Union[int, Dict[str, int]] = None,
@@ -277,7 +280,7 @@ class Vocabulary(object):
         logger.info("Fitting token dictionary from dataset.")
         # 下面这行代码有点东西
         field_token_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-        for instance in Tqdm.tqdm(instances):
+        for instance in Tqdm(instances):
             for field in create_fields:
                 for token in instance[field]:
                     field_token_counts[field][token] += 1
@@ -453,6 +456,9 @@ class Vocabulary(object):
                   for name in self._index_to_token]
         non_padded_fields = f"Non Padded fields: {self._non_padded_fields}"
         return " ".join([base_string] + fields + [non_padded_fields])
+
+    def __getitem__(self, item):
+        return self._token_to_index[item]
 
     def print_statistics(self) -> None:
         if self._retained_counter:

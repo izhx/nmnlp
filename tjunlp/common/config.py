@@ -52,3 +52,6 @@ class Config(object):
     def save(self) -> None:
         """ save inplace. """
         self.to_file(self.path)
+
+    def reload(self):
+        return self.from_file(self.path)

@@ -49,9 +49,9 @@ class Optimizer(object):
     @classmethod
     def from_config(cls, model_params: Dict, setting: Dict):
         name = setting.pop('name')
-        try:
+        if name in _OPTIM:
             return _OPTIM[name](cls._get_require_grads_param(model_params), **setting)
-        except:
+        else:
             raise ConfigurationError(f'Wrong optimizer name: {name} !')
 
 

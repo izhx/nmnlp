@@ -35,6 +35,15 @@ class ExperimentalFeatureWarning(RuntimeWarning):
     pass
 
 
+def check_dimensions_match(dimension_1: int,
+                           dimension_2: int,
+                           dim_1_name: str,
+                           dim_2_name: str) -> None:
+    if dimension_1 != dimension_2:
+        raise ConfigurationError(f"{dim_1_name} must match {dim_2_name}, but "
+                                 f"got {dimension_1} and {dimension_2} instead")
+
+
 def parse_cuda_device(cuda_device: Union[str, int, List[int]]) -> Union[int, List[int]]:
     """
     Disambiguates single GPU and multiple GPU settings for cuda_device param.
