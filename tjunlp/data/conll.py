@@ -2,13 +2,13 @@ from typing import Any, List, Dict, Tuple
 import os
 import logging
 from collections import OrderedDict
+from overrides import overrides
 
 import torch
-from torch.utils.data import Dataset, ConcatDataset
 from conllu import parse_incr
 
-from tjunlp.common.checks import ConfigurationError
-from tjunlp.core.vocabulary import Vocabulary, DEFAULT_PADDING_INDEX
+from tjunlp.core.vocabulary import DEFAULT_PADDING_INDEX
+from tjunlp.core.dataset import DataSet
 
 logger = logging.getLogger(__name__)
 
@@ -18,34 +18,17 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
                      ('misc', None)])
 
 
-class ConlluDataset(Dataset):
-    def __init__(self, path: str, tokenizer=None, lang: str = 'en',
+class ConlluDataset(DataSet):
+    index_fields = ('words', 'lemma', 'upos', 'deprel')
+
+    def __init__(self, file_path: str, tokenizer=None, lang: str = 'en',
                  multi_lang: bool = False,
                  use_language_specific_pos: bool = False,
                  **kwargs):
-        self.target_fields = ['rels', 'heads']
-        self.tokenizer = tokenizer
         self.lang = lang
         self.multi_lang = multi_lang
         self.use_language_specific_pos = use_language_specific_pos
-        self.indexed = False
-        self.vocab = None
-
-        if os.path.exists(path):
-            self.data = self.read(path)
-            if not self.data:
-                raise ConfigurationError(f"No data at: {path}")
-        else:
-            raise ConfigurationError(f"File not exist! Please check the path: {path}")
-
-    def __getitem__(self, item):
-        return self.data[item]
-
-    def __add__(self, other):
-        return ConcatDataset([self, other])
-
-    def __len__(self):
-        return len(self.data)
+        super().__init__(file_path, tokenizer)  # 不可调换顺序
 
     def read(self, file_path) -> List:
         data = list()
@@ -53,12 +36,6 @@ class ConlluDataset(Dataset):
             logger.info("Reading UD instances from conllu dataset at: %s", file_path)
 
             for annotation in parse_incr(conllu_file):
-                # CoNLLU annotations sometimes add back in words that have been elided
-                # in the original sentence; we remove these, as we're just predicting
-                # dependencies for the original sentence.
-                # We filter by None here as elided words have a non-integer word id,
-                # and are replaced with None by the conllu python library.
-
                 annotation = [x for x in annotation if isinstance(x["id"], int)]
                 if annotation[0]['id'] == 0:
                     for i in range(len(annotation)):
@@ -78,14 +55,9 @@ class ConlluDataset(Dataset):
                 data.append(self.text_to_instance(ids, words, lemma, upos_tag, (deprel, heads)))
         return data
 
-    def text_to_instance(
-            self,
-            ids: List[int],
-            words: List[str],
-            lemma: List[str],
-            upos_tags: List[str],
-            dependencies: Tuple = None,
-    ):  # TODO(izhx) 加一个虚根？
+    @overrides
+    def text_to_instance(self, ids: List[int], words: List[str], lemma: List[str],
+                         upos_tags: List[str], dependencies: Tuple = None, ):  # TODO(izhx) 加一个虚根？
         fields: Dict[str, object] = {}
 
         if self.tokenizer is not None:
@@ -105,20 +77,6 @@ class ConlluDataset(Dataset):
         fields["metadata"] = {"words": words, "pos": upos_tags,
                               "lang": self.lang, 'sent_len': len(ids)}
         return fields
-
-    @staticmethod
-    def instance_to_index(instance, vocab: Vocabulary):
-        for key in ('words', 'lemma', 'upos', 'deprel'):
-            instance[key] = vocab.tokens_to_indices(instance[key], key)
-        return instance
-
-    def index_dataset(self, vocab: Vocabulary):
-        """
-        Data should be indexed or other operation by this method.
-        """
-        self.data = [self.instance_to_index(ins, vocab) for ins in self.data]
-        self.indexed = True
-        self.vocab = vocab
 
     def collate_fn(self, batch) -> Dict[str, Any]:
         result = dict()  # batch, seq

@@ -11,10 +11,7 @@ import pickle
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 
-from torch.utils.data import Dataset, ConcatDataset
-
 from tjunlp.common.util import field_match
-from tjunlp.common.config import Config
 from tjunlp.common.checks import ConfigurationError
 from tjunlp.common.tqdm import Tqdm
 
@@ -280,6 +277,8 @@ class Vocabulary(object):
         logger.info("Fitting token dictionary from dataset.")
         # 下面这行代码有点东西
         field_token_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        if isinstance(instances, dict):
+            instances = instances['train'] + instances['dev']
         for instance in Tqdm(instances):
             for field in create_fields:
                 for token in instance[field]:

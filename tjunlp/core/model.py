@@ -1,4 +1,4 @@
-from typing import Dict, Union, List, Set
+from typing import Dict, Union, List, Any
 import os
 import logging
 
@@ -7,7 +7,6 @@ import numpy
 import torch
 
 from tjunlp.common.config import Config
-from tjunlp.core.instance import Instance
 
 
 class Model(torch.nn.Module):
@@ -15,11 +14,11 @@ class Model(torch.nn.Module):
 
     """
 
-    def __init__(self):
+    def __init__(self, criterion):
         super().__init__()
-        pass
+        self.criterion = criterion
 
-    def forward(self, *inputs) -> Dict[str, torch.Tensor]:
+    def forward(self, *inputs) -> Dict[str, Any]:
         """
         Defines the forward pass of the model. In addition, to facilitate easy training,
         this method is designed to compute a loss function defined by a user.
@@ -58,16 +57,16 @@ class Model(torch.nn.Module):
             :class:`~tju.core.Trainer` api, you must provide a "loss" key pointing to a
             scalar ``torch.Tensor`` representing the loss to be optimized.
         """
-        pass
+        raise NotImplementedError
 
-    def forward_on_instance(self, instance: Instance) -> Dict[str, numpy.ndarray]:
+    def forward_on_instance(self, instance) -> Dict[str, Any]:
         return self.forward_on_instances([instance])[0]
 
-    def forward_on_instances(self, instances: List[Instance]) -> List[Dict[str, numpy.ndarray]]:
+    def forward_on_instances(self, instances: List) -> List[Dict[str, Any]]:
         pass
 
-    def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        return {}
+    def get_metrics(self, prediction, ground_truth) -> Dict[str, float]:
+        raise NotImplementedError
 
     @classmethod
     def load(cls,

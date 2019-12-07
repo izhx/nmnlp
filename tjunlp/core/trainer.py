@@ -5,25 +5,16 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
-from torch.optim.adamw import AdamW
 from torch.nn.utils import clip_grad_norm
-from torch.utils.data import Dataset, DataLoader
+from torch.optim.optimizer import Optimizer
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.checks import ConfigurationError
 from tjunlp.common.config import Config
 from tjunlp.common.tqdm import Tqdm
 from tjunlp.common.util import sys_info, sec_to_time, merge_dicts
-
-_OPTIMIZER = {
-    'Adam': torch.optim.Adam,
-    'SGD': torch.optim.SGD,
-    'AdamW': AdamW
-}
-
-_CRITERION = {
-    'CrossEntropyLoss': nn.CrossEntropyLoss,
-}
+from tjunlp.core.dataset import DataSet
 
 
 def to_device(data, device: torch.device):
@@ -53,8 +44,9 @@ class Trainer(object):
 
     def __init__(self,
                  cfg: Config,
-                 dataset: Dict,
+                 dataset: Dict[str, DataSet],
                  model: nn.Module,
+                 optimizer: Optimizer,
                  device: str,
                  n_epochs: int,
                  dev_on_cpu: bool = True,
@@ -64,12 +56,11 @@ class Trainer(object):
         self.cfg = cfg
         self.dataset = dataset
         self.model = model
+        self.optimizer = optimizer
         self.kwargs = kwargs
         if device == 'cuda' and not torch.cuda.is_available():
             raise ConfigurationError("No GPU found, please run at CPU!")
         self.device = torch.device(device)
-        self.optimizer = self.build_optimizer(model.parameters())
-        self.model.criterion = self.build_criterion()
         self.n_epochs = n_epochs
         # self.update_every = update_every
         # self.validate_every = validate_every
@@ -90,25 +81,6 @@ class Trainer(object):
         self.writer = SummaryWriter(log_dir=path)
 
         return
-
-    def build_optimizer(self, model_params):
-        def require_grads_param(params):
-            """将params中不需要gradient的删除"""
-            return [param for param in params if param.requires_grad]
-
-        name = self.cfg['model']['optimizer']
-        if name in _OPTIMIZER:
-            return _OPTIMIZER[name](require_grads_param(model_params),
-                                    **self.cfg['optimizer'])
-        else:
-            raise ConfigurationError(f'Wrong optimizer name: {name} !')
-
-    def build_criterion(self):
-        name = self.cfg['model']['criterion']
-        if name in _CRITERION:
-            return _CRITERION[name](**self.cfg['criterion'])
-        else:
-            raise ConfigurationError(f'Wrong criterion name: {name} !')
 
     def lr(self):
         return self.optimizer.param_groups[0]['lr']
