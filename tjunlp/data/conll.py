@@ -75,31 +75,31 @@ class ConlluDataset(DataSet):
             fields["deprel"], fields["heads"] = dependencies
 
         fields["metadata"] = {"words": words, "pos": upos_tags,
-                              "lang": self.lang, 'sent_len': len(ids)}
+                              "lang": self.lang, 'seq_lens': len(ids)}
         return fields
 
     def collate_fn(self, batch) -> Dict[str, Any]:
         result = dict()  # batch, seq
 
         ids_sorted = sorted(range(len(batch)),
-                            key=lambda x: batch[x]['metadata']['sent_len'],
+                            key=lambda x: batch[x]['metadata']['seq_lens'],
                             reverse=True)
 
-        max_len = batch[ids_sorted[0]]['metadata']['sent_len']
+        max_len = batch[ids_sorted[0]]['metadata']['seq_lens']
 
         for i, o in zip(range(len(batch)), ids_sorted):
-            sent_len = len(batch[o]['words'])
-            result.setdefault('sent_lens', list()).append(sent_len)
+            seq_lens = len(batch[o]['words'])
+            result.setdefault('seq_lens', list()).append(seq_lens)
             for key in ('word_ids', 'words', 'lemma', 'upos', 'deprel', 'heads'):
                 result.setdefault(key, torch.zeros((len(batch), max_len), dtype=torch.int64))[i,
-                :sent_len] = torch.tensor(batch[o][key], dtype=torch.int64)
+                :seq_lens] = torch.tensor(batch[o][key], dtype=torch.int64)
 
             heads = torch.tensor(batch[o]['heads'], dtype=torch.int64)
-            if torch.any(heads < 0) or torch.any(heads >= sent_len):
+            if torch.any(heads < 0) or torch.any(heads >= seq_lens):
                 raise Exception("?????????")
 
             result.setdefault('pretrained', torch.zeros((len(batch), max_len), dtype=torch.int64))[
-            i, :sent_len] = torch.tensor(batch[o]['words'], dtype=torch.int64)
+            i, :seq_lens] = torch.tensor(batch[o]['words'], dtype=torch.int64)
 
         result['word_mask'] = torch.eq(result['words'], DEFAULT_PADDING_INDEX).bool()
 

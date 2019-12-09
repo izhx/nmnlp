@@ -27,7 +27,7 @@ class Tqdm(_tqdm):
     # These defaults are the same as the argument defaults in tqdm.
     default_mininterval: float = 0.1
     default_dynamic_ncols: bool = True
-    default_bar_format: str = '{l_bar}{bar}{r_bar}'
+    default_bar_format: str = '{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
 
     # l_bar='{desc}: {percentage:3.0f}%|' and
     # r_bar='| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, '

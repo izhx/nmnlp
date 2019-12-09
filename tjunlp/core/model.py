@@ -2,8 +2,6 @@ from typing import Dict, Union, List, Any
 import os
 import logging
 
-import numpy
-
 import torch
 
 from tjunlp.common.config import Config
@@ -17,6 +15,7 @@ class Model(torch.nn.Module):
     def __init__(self, criterion):
         super().__init__()
         self.criterion = criterion
+        self.evaluating = False
 
     def forward(self, *inputs) -> Dict[str, Any]:
         """
@@ -59,14 +58,23 @@ class Model(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def forward_on_instance(self, instance) -> Dict[str, Any]:
-        return self.forward_on_instances([instance])[0]
-
-    def forward_on_instances(self, instances: List) -> List[Dict[str, Any]]:
-        pass
-
-    def get_metrics(self, prediction, ground_truth) -> Dict[str, float]:
+    def get_metrics(self, reset=False, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
+
+    def is_best(self, metric: Dict[str, float], former: Dict[str, float]) -> bool:
+        raise NotImplementedError
+
+    def train_mode(self):
+        self.evaluating = False
+        return self.train()
+
+    def eval_mode(self):
+        self.evaluating = True
+        return self.eval()
+
+    def test_mode(self):
+        self.evaluating = False
+        return self.eval()
 
     @classmethod
     def load(cls,
