@@ -47,17 +47,20 @@ def seq_len_to_mask(seq_len, max_len=None):
     :return: np.ndarray, torch.Tensor 。shape将是(B, max_length)， 元素类似为bool或torch.uint8
     """
     if isinstance(seq_len, np.ndarray):
-        assert len(np.shape(seq_len)) == 1, f"seq_len can only have one dimension, got {len(np.shape(seq_len))}."
+        assert len(np.shape(
+            seq_len)) == 1, f"seq_len can only have one dimension, got {len(np.shape(seq_len))}."
         max_len = int(max_len) if max_len else int(max(seq_len))
         broad_cast_seq_len = np.tile(np.arange(max_len), (len(seq_len), 1))
         mask = broad_cast_seq_len < seq_len.reshape(-1, 1)
         mask = torch.from_numpy(mask)
 
     elif isinstance(seq_len, torch.Tensor):
-        assert seq_len.dim() == 1, f"seq_len can only have one dimension, got {seq_len.dim() == 1}."
+        assert seq_len.dim(
+        ) == 1, f"seq_len can only have one dimension, got {seq_len.dim() == 1}."
         batch_size = seq_len.size(0)
         max_len = int(max_len) if max_len else seq_len.max().long()
-        broad_cast_seq_len = torch.arange(max_len).expand(batch_size, -1).to(seq_len)
+        broad_cast_seq_len = torch.arange(
+            max_len).expand(batch_size, -1).to(seq_len)
         mask = broad_cast_seq_len.lt(seq_len.unsqueeze(1))
     elif isinstance(seq_len, List):
         return seq_len_to_mask(np.array(seq_len), max_len)
@@ -184,7 +187,8 @@ class GraphParser(object):
         :return heads: [batch, seq_len] 每个元素在树中对应的head(parent)预测结果
         """
         _, seq_len, _ = arc_matrix.shape
-        matrix = arc_matrix + torch.diag(arc_matrix.new(seq_len).fill_(-np.inf))
+        matrix = arc_matrix + \
+            torch.diag(arc_matrix.new(seq_len).fill_(-np.inf))
         flip_mask = mask.eq(False)
         matrix.masked_fill_(flip_mask.unsqueeze(1), -np.inf)
         _, heads = torch.max(matrix, dim=2)
@@ -204,10 +208,12 @@ class GraphParser(object):
         batch_size, seq_len, _ = arc_matrix.shape
         matrix = arc_matrix.clone()
         ans = matrix.new_zeros(batch_size, seq_len).long()
-        lens = (mask.long()).sum(1) if mask is not None else torch.zeros(batch_size) + seq_len
+        lens = (mask.long()).sum(
+            1) if mask is not None else torch.zeros(batch_size) + seq_len
         for i, graph in enumerate(matrix):
             len_i = lens[i]
-            ans[i, :len_i] = torch.as_tensor(_mst(graph.detach()[:len_i, :len_i].cpu().numpy()), device=ans.device)
+            ans[i, :len_i] = torch.as_tensor(
+                _mst(graph.detach()[:len_i, :len_i].cpu().numpy()), device=ans.device)
         if mask is not None:
             ans *= mask.long()
         return ans
@@ -224,10 +230,12 @@ class ArcBiaffine(nn.Module):
         :param bias: 是否使用bias. Default: ``True``
         """
         super(ArcBiaffine, self).__init__()
-        self.U = nn.Parameter(torch.randn(hidden_size, hidden_size), requires_grad=True)
+        self.U = nn.Parameter(torch.randn(
+            hidden_size, hidden_size), requires_grad=True)
         self.has_bias = bias
         if self.has_bias:
-            self.bias = nn.Parameter(torch.randn(hidden_size), requires_grad=True)
+            self.bias = nn.Parameter(torch.randn(
+                hidden_size), requires_grad=True)
         else:
             self.register_parameter("bias", None)
         initial_parameter(self)
@@ -258,8 +266,10 @@ class LabelBilinear(nn.Module):
         :param bias: 是否使用bias. Default: ``True``
         """
         super(LabelBilinear, self).__init__()
-        self.bilinear = nn.Bilinear(in1_features, in2_features, num_label, bias=bias)
-        self.lin = nn.Linear(in1_features + in2_features, num_label, bias=False)
+        self.bilinear = nn.Bilinear(
+            in1_features, in2_features, num_label, bias=bias)
+        self.lin = nn.Linear(in1_features + in2_features,
+                             num_label, bias=False)
 
     def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         """
@@ -310,9 +320,11 @@ class BiaffineParser(Model, GraphParser):
         super().__init__(criterion)
         rnn_out_size = 2 * rnn_hidden_size
         word_hid_dim = pos_hid_dim = rnn_hidden_size
-        self.word_embedding = nn.Embedding.from_pretrained(emb_matrix, freeze=True)
+        self.word_embedding = nn.Embedding.from_pretrained(
+            emb_matrix, freeze=True)
         word_emb_dim = self.word_embedding.embedding_dim
-        self.pos_embedding = nn.Embedding(num_embeddings=pos_vocab_size, embedding_dim=pos_emb_dim)
+        self.pos_embedding = nn.Embedding(
+            num_embeddings=pos_vocab_size, embedding_dim=pos_emb_dim)
         self.word_fc = nn.Linear(word_emb_dim, word_hid_dim)
         self.pos_fc = nn.Linear(pos_emb_dim, pos_hid_dim)
         self.word_norm = nn.LayerNorm(word_hid_dim)
@@ -344,7 +356,8 @@ class BiaffineParser(Model, GraphParser):
             n_head = 16
             d_k = d_v = int(rnn_out_size / n_head)
             if (d_k * n_head) != rnn_out_size:
-                raise ValueError('unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
+                raise ValueError(
+                    'unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
             self.position_emb = nn.Embedding(num_embeddings=self.max_len,
                                              embedding_dim=rnn_out_size, )
             self.encoder = TransformerEncoder(num_layers=rnn_layers,
@@ -363,7 +376,8 @@ class BiaffineParser(Model, GraphParser):
         self.arc_mlp_size = arc_mlp_size
         self.label_mlp_size = label_mlp_size
         self.arc_biaffine = ArcBiaffine(arc_mlp_size, bias=True)
-        self.label_bilinear = LabelBilinear(label_mlp_size, label_mlp_size, num_label, bias=True)
+        self.label_bilinear = LabelBilinear(
+            label_mlp_size, label_mlp_size, num_label, bias=True)
         self.use_greedy_infer = use_greedy_infer
         self.reset_parameters()
         self.dropout = dropout
@@ -422,7 +436,8 @@ class BiaffineParser(Model, GraphParser):
             # _, unsort_idx = torch.sort(sort_idx, dim=0, descending=False)
             # feat = feat[unsort_idx]
         else:
-            seq_range = torch.arange(length, dtype=torch.long, device=x.device)[None, :]
+            seq_range = torch.arange(
+                length, dtype=torch.long, device=x.device)[None, :]
             x = x + self.position_emb(seq_range)
             feat = self.encoder(x, mask.float())
 
@@ -431,7 +446,8 @@ class BiaffineParser(Model, GraphParser):
         feat = self.mlp(feat)
         arc_sz, label_sz = self.arc_mlp_size, self.label_mlp_size
         arc_dep, arc_head = feat[:, :, :arc_sz], feat[:, :, arc_sz:2 * arc_sz]
-        label_dep, label_head = feat[:, :, 2 * arc_sz:2 * arc_sz + label_sz], feat[:, :, 2 * arc_sz + label_sz:]
+        label_dep = feat[:, :, 2 * arc_sz:2 * arc_sz + label_sz]
+        label_head = feat[:, :, 2 * arc_sz + label_sz:]
 
         # biaffine arc classifier
         arc_pred = self.arc_biaffine(arc_head, arc_dep)  # [N, L, L]
@@ -452,11 +468,13 @@ class BiaffineParser(Model, GraphParser):
             if self.evaluating and (heads is None):
                 heads = head_pred
 
-        batch_range = torch.arange(start=0, end=batch_size, dtype=torch.long, device=words.device).unsqueeze(1)
+        batch_range = torch.arange(
+            start=0, end=batch_size, dtype=torch.long, device=words.device).unsqueeze(1)
         label_head = label_head[batch_range, heads].contiguous()
         deprel = deprel.gather(1, heads)  # 按照头的顺序调整
 
-        label_pred = self.label_bilinear(label_head, label_dep)  # [N, L, num_label]
+        label_pred = self.label_bilinear(
+            label_head, label_dep)  # [N, L, num_label]
         res_dict = {'arc': arc_pred, 'label': label_pred}
         if head_pred is not None:
             res_dict['head'] = head_pred
@@ -466,7 +484,8 @@ class BiaffineParser(Model, GraphParser):
             res_dict['loss'] = loss
             if self.evaluating:
                 label_pred = label_pred.max(dim=2)[1]
-                res_dict['metric'] = self.get_metrics(head_pred, label_pred, heads, deprel, seq_lens)
+                res_dict['metric'] = self.get_metrics(
+                    head_pred, label_pred, heads, deprel, seq_lens)
 
         return res_dict
 
@@ -487,11 +506,14 @@ class BiaffineParser(Model, GraphParser):
         mask = seq_len_to_mask(seq_len, max_len=length).to(arc_pred.device)
         flip_mask = (mask.eq(False))
         _arc_pred = arc_pred.clone()
-        _arc_pred = _arc_pred.masked_fill(flip_mask.unsqueeze(1), -float('inf'))
+        _arc_pred = _arc_pred.masked_fill(
+            flip_mask.unsqueeze(1), -float('inf'))
         arc_logits = F.log_softmax(_arc_pred, dim=2)
         label_logits = F.log_softmax(label_pred, dim=2)
-        batch_index = torch.arange(batch_size, device=arc_logits.device, dtype=torch.long).unsqueeze(1)
-        child_index = torch.arange(length, device=arc_logits.device, dtype=torch.long).unsqueeze(0)
+        batch_index = torch.arange(
+            batch_size, device=arc_logits.device, dtype=torch.long).unsqueeze(1)
+        child_index = torch.arange(
+            length, device=arc_logits.device, dtype=torch.long).unsqueeze(0)
         arc_loss = arc_logits[batch_index, child_index, arc_gt]
         label_loss = label_logits[batch_index, child_index, label_gt]
 
@@ -530,7 +552,8 @@ class BiaffineParser(Model, GraphParser):
         # mask out <root> tag
         seq_mask[:, 0] = 0
         head_pred_correct = (head_pred == head_gt).long() * seq_mask
-        label_pred_correct = (label_pred == label_gt).long() * head_pred_correct
+        label_pred_correct = (
+            label_pred == label_gt).long() * head_pred_correct
         arc = head_pred_correct.sum().item()
         label = label_pred_correct.sum().item()
         sample = seq_mask.sum().item()

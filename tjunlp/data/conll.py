@@ -57,7 +57,7 @@ class ConlluDataset(DataSet):
 
     @overrides
     def text_to_instance(self, ids: List[int], words: List[str], lemma: List[str],
-                         upos_tags: List[str], dependencies: Tuple = None, ):  # TODO(izhx) 加一个虚根？
+                         upos_tags: List[str], dependencies: Tuple = None):
         fields: Dict[str, object] = {}
 
         if self.tokenizer is not None:

@@ -1,18 +1,23 @@
+"""
+code form stanfordnlp
+"""
+
 from typing import Dict, Any
-from overrides import overrides
 from collections import OrderedDict
+from overrides import overrides
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pack_sequence, PackedSequence
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence,\
+    pack_sequence, PackedSequence
 
 from tjunlp.common.checks import ConfigurationError
 from tjunlp.core.model import Model
 from tjunlp.core.vocabulary import Vocabulary, DEFAULT_PADDING_INDEX
 from tjunlp.models.common.lstm import PackedLSTM, HighwayLSTM
-from tjunlp.models.dependency_parser import GraphParser, seq_len_to_mask
+from tjunlp.models.dependency_parser import seq_len_to_mask
 
 from tjunlp.models.chuliu_edmonds import chuliu_edmonds_one_root
 
@@ -21,8 +26,10 @@ def tensor_unsort(sorted_tensor, origin_index):
     """
     Unsort a sorted tensor on its 0-th dimension, based on the original idx.
     """
-    assert sorted_tensor.size(0) == len(origin_index), "Number of list elements must match with original indices."
-    back_index = [x[0] for x in sorted(enumerate(origin_index), key=lambda x: x[1])]
+    assert sorted_tensor.size(0) == len(
+        origin_index), "Number of list elements must match with original indices."
+    back_index = [x[0]
+                  for x in sorted(enumerate(origin_index), key=lambda x: x[1])]
     return sorted_tensor[back_index]
 
 
@@ -39,9 +46,11 @@ class CharacterModel(nn.Module):
         self.num_layers = num_layers
 
         # char embeddings
-        self.char_emb = nn.Embedding(len(vocab['char']), emb_dim, padding_idx=0)
+        self.char_emb = nn.Embedding(
+            len(vocab['char']), emb_dim, padding_idx=0)
         if self.attn:
-            self.char_attn = nn.Linear(self.num_dir * hidden_dim, 1, bias=False)
+            self.char_attn = nn.Linear(
+                self.num_dir * hidden_dim, 1, bias=False)
             self.char_attn.weight.data.zero_()
 
         # modules
@@ -69,8 +78,10 @@ class CharacterModel(nn.Module):
         # apply attention, otherwise take final states
         if self.attn:
             char_reps = output[0]
-            weights = torch.sigmoid(self.char_attn(self.dropout(char_reps.data)))
-            char_reps = PackedSequence(char_reps.data * weights, char_reps.batch_sizes)
+            weights = torch.sigmoid(
+                self.char_attn(self.dropout(char_reps.data)))
+            char_reps = PackedSequence(
+                char_reps.data * weights, char_reps.batch_sizes)
             char_reps, _ = pad_packed_sequence(char_reps, batch_first=True)
             res = char_reps.sum(1)
         else:
@@ -124,19 +135,19 @@ class PairwiseBilinear(nn.Module):
                                  requires_grad=True) if bias else 0
 
     def forward(self, input1, input2):
-        i1s, i2s = list(input1.size()), list(input2.size())
+        n, l1, d1, _, l2, d2, o = * \
+            list(input1.size()), *list(input2.size()), self.output_size
 
         # ((N x L1) x D1) * (D1 x (D2 x O)) -> (N x L1) x (D2 x O)
-        intermediate = torch.mm(input1.view(-1, i1s[-1]),
-                                self.weight.view(-1, self.input2_size * self.output_size))
+        temp = torch.mm(input1.view(-1, d1), self.weight.view(-1, d2 * o))
         # (N x L2 x D2) -> (N x D2 x L2)
         input2 = input2.transpose(1, 2)
+        # (N L1 d2 O) -> (N L1 O d2)
+        temp = temp.view(n, l1, d2, o).transpose(2, 3)
         # (N x (L1 x O) x D2) * (N x D2 x L2) -> (N x (L1 x O) x L2)
-        output = intermediate.view(i1s[0], i1s[1] * self.output_size, i2s[2]).bmm(input2)
+        output = temp.reshape(n, l1*o, d2).bmm(input2)
         # (N x (L1 x O) x L2) -> (N x L1 x L2 x O)
-        output = output.view(i1s[0], i1s[1], i2s[1], self.output_size)
-        # TODO(izhx): 待验证改动是否正确
-        # output = output.view(input1_size[0], input1_size[1], self.output_size, input2_size[1]).transpose(2, 3)
+        output = output.view(n, l1, o, l2).transpose(2, 3)
 
         return output
 
@@ -145,27 +156,31 @@ class BiaffineScorer(nn.Module):
     def __init__(self, input1_size, input2_size, output_size, pairwise=True):
         super().__init__()
         if pairwise:
-            self.W_bilin = PairwiseBilinear(input1_size + 1, input2_size + 1, output_size)
+            self.W_bilin = PairwiseBilinear(
+                input1_size + 1, input2_size + 1, output_size)
         else:
-            self.W_bilin = nn.Bilinear(input1_size + 1, input2_size + 1, output_size)
+            self.W_bilin = nn.Bilinear(
+                input1_size + 1, input2_size + 1, output_size)
 
         self.W_bilin.weight.data.zero_()
         self.W_bilin.bias.data.zero_()
 
     def forward(self, input1, input2):
-        input1 = torch.cat([input1, input1.new_ones(*input1.size()[:-1], 1)], len(input1.size()) - 1)
-        input2 = torch.cat([input2, input2.new_ones(*input2.size()[:-1], 1)], len(input2.size()) - 1)
+        input1 = torch.cat([input1, input1.new_ones(
+            *input1.size()[:-1], 1)], len(input1.size()) - 1)
+        input2 = torch.cat([input2, input2.new_ones(
+            *input2.size()[:-1], 1)], len(input2.size()) - 1)
         return self.W_bilin(input1, input2)
 
 
 class DeepBiaffineScorer(nn.Module):
-    def __init__(self, input1_size, input2_size, hidden_size, output_size, hidden_func=F.relu, dropout: float = 0,
-                 pairwise=True):
+    def __init__(self, input1_size, input2_size, hidden_size, output_size,
+                 hidden_func=F.relu, dropout: float = 0):
         super().__init__()
         self.W1 = nn.Linear(input1_size, hidden_size)
         self.W2 = nn.Linear(input2_size, hidden_size)
         self.hidden_func = hidden_func
-        self.scorer = BiaffineScorer(hidden_size, hidden_size, output_size, pairwise)
+        self.scorer = BiaffineScorer(hidden_size, hidden_size, output_size)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, input1, input2):
@@ -173,7 +188,12 @@ class DeepBiaffineScorer(nn.Module):
                            self.dropout(self.hidden_func(self.W2(input2))))
 
 
-class Parser(Model, GraphParser):
+class Parser(Model):
+    """
+    code form stanfordnlp.
+    """
+    # pylint: disable=too-many-instance-attributes
+
     def __init__(self,
                  vocab: Vocabulary,
                  criterion: Any,
@@ -191,7 +211,6 @@ class Parser(Model, GraphParser):
                  dropout: float = 0.5,
                  word_dropout: float = 0.33,
                  rec_dropout: float = 0,
-                 pairwise: bool = True,
                  **kwargs):
         super().__init__(criterion)
         self.vocab = vocab
@@ -202,53 +221,43 @@ class Parser(Model, GraphParser):
         self.word_emb_dim = word_emb_dim
         self.tag_emb_dim = tag_emb_dim
         self.unsaved_modules = []
-
-        # def add_unsaved_module(name, module):
-        #     self.unsaved_modules += [name]
-        #     setattr(self, name, module)
+        self.len_words = len(vocab['words'])
+        self.len_lemma = len(vocab['lemma'])
+        self.len_upos = len(vocab['upos'])
+        self.len_deprel = len(vocab['deprel'])
 
         # input layers
         input_size = 0
         if word_emb_dim > 0:
             # frequent word embeddings
-            self.word_emb = nn.Embedding(len(vocab['words']), word_emb_dim,
+            self.word_emb = nn.Embedding(self.len_words, word_emb_dim,
                                          padding_idx=DEFAULT_PADDING_INDEX)
-            self.lemma_emb = nn.Embedding(len(vocab['lemma']), word_emb_dim,
+            self.lemma_emb = nn.Embedding(self.len_lemma, word_emb_dim,
                                           padding_idx=DEFAULT_PADDING_INDEX)
             input_size += word_emb_dim * 2
 
         if tag_emb_dim > 0:
-            self.upos_emb = nn.Embedding(len(vocab['upos']), tag_emb_dim,
+            self.upos_emb = nn.Embedding(self.len_upos, tag_emb_dim,
                                          padding_idx=DEFAULT_PADDING_INDEX)
-
-            # if not isinstance(vocab['xpos'], CompositeVocab):
-            #     self.xpos_emb = nn.Embedding(len(vocab['xpos']), tag_emb_dim, padding_idx=0)
-            # else:
-            #     self.xpos_emb = nn.ModuleList()
-            #
-            #     for l in vocab['xpos'].lens():
-            #         self.xpos_emb.append(nn.Embedding(l, tag_emb_dim, padding_idx=0))
-            #
-            # self.ufeats_emb = nn.ModuleList()
-            #
-            # for l in vocab['feats'].lens():
-            #     self.ufeats_emb.append(nn.Embedding(l, tag_emb_dim, padding_idx=0))
-
             input_size += tag_emb_dim
 
         if char_model_cfg:
             if not char_model_cfg['char_emb_dim'] > 0:
                 raise ConfigurationError('char_emb_dim must greater than 0')
-            self.char_model = CharacterModel(vocab=vocab, dropout=dropout, **char_model_cfg)
-            self.trans_char = nn.Linear(char_model_cfg['char_hidden_dim'], transformed_dim, bias=False)
+            self.char_model = CharacterModel(
+                vocab=vocab, dropout=dropout, **char_model_cfg)
+            self.trans_char = nn.Linear(
+                char_model_cfg['char_hidden_dim'], transformed_dim, bias=False)
             input_size += transformed_dim
         else:
             self.char_model = None
 
         if pretrained_emb:  # TODO(izhx): 这里留出 bert elmo 的接口
             # pretrained embeddings, by default this won't be saved into model file
-            self.pretrained_emb = nn.Embedding.from_pretrained(emb_matrix, freeze=True)
-            self.trans_pretrained = nn.Linear(emb_matrix.shape[1], transformed_dim, bias=False)
+            self.pretrained_emb = nn.Embedding.from_pretrained(
+                emb_matrix, freeze=True)
+            self.trans_pretrained = nn.Linear(
+                emb_matrix.shape[1], transformed_dim, bias=False)
             input_size += transformed_dim
         else:
             self.pretrained_emb = None
@@ -259,24 +268,25 @@ class Parser(Model, GraphParser):
                                         dropout=dropout,
                                         rec_dropout=rec_dropout,
                                         highway_func=torch.tanh)
-        self.drop_replacement = nn.Parameter(torch.randn(input_size) / np.sqrt(input_size), requires_grad=True)  # TODO
+        self.drop_replacement = nn.Parameter(torch.randn(
+            input_size) / np.sqrt(input_size), requires_grad=True)
         self.lstm_h = nn.Parameter(torch.zeros(2 * num_layers, 1, hidden_dim),
-                                   requires_grad=True)  # TODO(izhx): 改动验证
+                                   requires_grad=True)
         self.lstm_c = nn.Parameter(torch.zeros(2 * num_layers, 1, hidden_dim),
                                    requires_grad=True)
 
         # classifiers
         self.unlabeled = DeepBiaffineScorer(2 * hidden_dim, 2 * hidden_dim,
                                             deep_biaffine_hidden_dim, 1,
-                                            pairwise=pairwise, dropout=dropout)
+                                            dropout=dropout)
         self.deprel = DeepBiaffineScorer(2 * hidden_dim, 2 * hidden_dim,
-                                         deep_biaffine_hidden_dim, len(vocab['deprel']),
-                                         pairwise=pairwise, dropout=dropout)
+                                         deep_biaffine_hidden_dim, self.len_deprel,
+                                         dropout=dropout)
         self.linearization = DeepBiaffineScorer(2 * hidden_dim, 2 * hidden_dim,
                                                 deep_biaffine_hidden_dim, 1,
-                                                pairwise=pairwise, dropout=dropout) if linearization else linearization
+                                                dropout=dropout) if linearization else linearization
         self.distance = DeepBiaffineScorer(2 * hidden_dim, 2 * hidden_dim,
-                                           deep_biaffine_hidden_dim, 1, pairwise=pairwise,
+                                           deep_biaffine_hidden_dim, 1,
                                            dropout=dropout) if distance else distance
 
         self.drop = nn.Dropout(dropout)
@@ -296,9 +306,6 @@ class Parser(Model, GraphParser):
             pretrained_emb = pack(pretrained_emb)
             inputs.append(pretrained_emb)
 
-        # def pad(x):
-        #    return pad_packed_sequence(PackedSequence(x, pretrained_emb.batch_sizes), batch_first=True)[0]
-
         if self.word_emb_dim > 0:
             word_emb = self.word_emb(words)
             word_emb = pack(word_emb)
@@ -309,23 +316,12 @@ class Parser(Model, GraphParser):
         if self.tag_emb_dim > 0:
             pos_emb = self.upos_emb(upos)
             inputs.append(pack(pos_emb))
-            # if isinstance(self.vocab['xpos'], CompositeVocab):
-            #     for i in range(len(self.vocab['xpos'])):
-            #         pos_emb += self.xpos_emb[i](xpos[:, :, i])
-            # else:
-            #     pos_emb += self.xpos_emb(xpos)
-            # pos_emb = pack(pos_emb)
-            #
-            # feats_emb = 0
-            # for i in range(len(self.vocab['feats'])):
-            #     feats_emb += self.ufeats_emb[i](ufeats[:, :, i])
-            # feats_emb = pack(feats_emb)
-            #
-            # inputs += [pos_emb, feats_emb]
 
         if self.char_model:
-            char_reps = self.char_model(wordchars, wordchars_mask, word_ids, seq_lens, word_lens)
-            char_reps = PackedSequence(self.trans_char(self.drop(char_reps.data)), char_reps.batch_sizes)
+            char_reps = self.char_model(
+                wordchars, wordchars_mask, word_ids, seq_lens, word_lens)
+            char_reps = PackedSequence(self.trans_char(
+                self.drop(char_reps.data)), char_reps.batch_sizes)
             inputs.append(char_reps)
 
         lstm_inputs = torch.cat([x.data for x in inputs], 1)
@@ -336,12 +332,15 @@ class Parser(Model, GraphParser):
         lstm_inputs = PackedSequence(lstm_inputs, inputs[0].batch_sizes)
 
         lstm_outputs, _ = self.highway_lstm(lstm_inputs, seq_lens, hx=(
-            self.lstm_h.expand(2 * self.num_layers, words.size(0), self.hidden_dim).contiguous(),
+            self.lstm_h.expand(2 * self.num_layers,
+                               words.size(0), self.hidden_dim).contiguous(),
             self.lstm_c.expand(2 * self.num_layers, words.size(0), self.hidden_dim).contiguous()))
         lstm_outputs, _ = pad_packed_sequence(lstm_outputs, batch_first=True)
 
-        unlabeled_scores = self.unlabeled(self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
-        deprel_scores = self.deprel(self.drop(lstm_outputs), self.drop(lstm_outputs))
+        unlabeled_scores = self.unlabeled(
+            self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
+        deprel_scores = self.deprel(
+            self.drop(lstm_outputs), self.drop(lstm_outputs))
 
         if self.linearization or self.distance:
             head_offset = torch.arange(
@@ -350,64 +349,76 @@ class Parser(Model, GraphParser):
                 words.size(1), device=heads.device).view(1, -1, 1).expand(words.size(0), -1, -1)
 
         if self.linearization:
-            lin_scores = self.linearization(self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
-            unlabeled_scores += F.logsigmoid(lin_scores * torch.sign(head_offset).float()).detach()
+            lin_scores = self.linearization(
+                self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
+            unlabeled_scores += F.logsigmoid(lin_scores *
+                                             torch.sign(head_offset).float()).detach()
 
         if self.distance:
-            dist_scores = self.distance(self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
+            dist_scores = self.distance(
+                self.drop(lstm_outputs), self.drop(lstm_outputs)).squeeze(3)
             dist_pred = 1 + F.softplus(dist_scores)
             dist_target = torch.abs(head_offset)
-            dist_kld = -torch.log((dist_target.float() - dist_pred) ** 2 / 2 + 1)
+            dist_kld = -torch.log((dist_target.float() -
+                                   dist_pred) ** 2 / 2 + 1)
             unlabeled_scores += dist_kld.detach()
 
-        diag = torch.eye(heads.size(-1), dtype=torch.uint8, device=heads.device).unsqueeze(0)  # heads.size(-1)+1
-        unlabeled_scores.masked_fill_(diag.bool(), -1)  # 惩罚，不预测自己 -float('inf')
+        diag = torch.eye(heads.size(-1), dtype=torch.bool,
+                         device=heads.device).unsqueeze(0)
+        unlabeled_scores.masked_fill_(diag, -float('inf'))  # 惩罚，不预测自己 -float('inf')
 
         preds = []
 
         if self.training or self.evaluating:
-            unlabeled_target = heads.masked_fill(word_mask, -1)
-            deprel_target = deprel.masked_fill(word_mask, -1)
+            unlabeled_target = heads.masked_fill(word_mask, -1)[:, 1:]
+            deprel_target = deprel.masked_fill(word_mask, -1)[:, 1:]
 
             if self.evaluating:
-                unlabeled = F.log_softmax(unlabeled_scores, 2).detach().cpu().numpy()
+                unlabeled = F.log_softmax(
+                    unlabeled_scores, 2).detach().cpu().numpy()
                 deprels = deprel_scores.max(3)[1].detach().cpu().numpy()
                 head_seqs = [chuliu_edmonds_one_root(adj[:l, :l])[1:] for adj, l in
                              zip(unlabeled, seq_lens)]  # remove attachment for the root
-                deprel_seqs = [[deprels[i][j + 1][h] for j, h in enumerate(hs)] for i, hs in enumerate(head_seqs)]
+                deprel_seqs = [[deprels[i][j + 1][h]
+                                for j, h in enumerate(hs)] for i, hs in enumerate(head_seqs)]
                 deprel_pred = torch.zeros_like(deprel)
                 head_pred = torch.zeros_like(heads)
                 for i, l in enumerate(seq_lens):
-                    head_pred[i][1:l] = torch.tensor(head_seqs[i], dtype=torch.int64)
-                    deprel_pred[i][1:l] = torch.tensor(deprel_seqs[i], dtype=torch.int64)
+                    # pylint: disable=not-callable
+                    head_pred[i][1:l] = torch.tensor(
+                        head_seqs[i], dtype=torch.int64)
+                    deprel_pred[i][1:l] = torch.tensor(
+                        deprel_seqs[i], dtype=torch.int64)
 
-                # pred_tokens = [[[str(head_seqs[i][j]), deprel_seqs[i][j]] for j in range(seq_lens[i] - 1)] for i in
-                #                range(len(seq_lens))]
-
-                metric = self.get_metrics(head_pred, heads, deprel_pred, deprel)
+                metric = self.get_metrics(
+                    head_pred, heads, deprel_pred, deprel)
             else:
                 metric = None
-            # unlabeled_scores = unlabeled_scores[:, 1:, :]  # exclude attachment for the root symbol
-            unlabeled_scores = unlabeled_scores.masked_fill(word_mask.unsqueeze(1), -1)  # 不预测mask  -float('inf')
 
-            loss = self.criterion(unlabeled_scores.contiguous().view(-1, unlabeled_scores.size(2)),
-                                  unlabeled_target.view(-1))  # TODO inf了
+            unlabeled_scores = unlabeled_scores.masked_fill(  # 不预测mask  -float('inf')
+                word_mask.unsqueeze(1), -float('inf'))[:, 1:, :]  # exclude attachment for the root symbol
 
-            # deprel_scores = deprel_scores[:, 1:]  # exclude attachment for the root symbol
-            ## deprel_scores = deprel_scores.masked_select(goldmask.unsqueeze(3)).view(-1, len(self.vocab['deprel']))
-            deprel_scores = torch.gather(deprel_scores, 2, heads.unsqueeze(2).unsqueeze(3).expand(-1, -1, -1, len(
-                self.vocab['deprel'])))  # shape(B,seq,seq,num) 相当于选真值head那个分支的预测结果(B,seq,head,num)
-            deprel_scores = deprel_scores.view(-1, len(self.vocab['deprel']))
+            loss = self.criterion(unlabeled_scores.reshape(
+                -1, unlabeled_scores.shape[-1]), unlabeled_target.reshape(-1))
 
-            loss += self.criterion(deprel_scores.contiguous(), deprel_target.view(-1))
+            deprel_scores = torch.gather(deprel_scores, 2, heads.unsqueeze(
+                2).unsqueeze(3).expand(-1, -1, -1, self.len_deprel))[:, 1:, :, :]
+            # shape(B,seq,seq,num) 相当于选真值head那个分支的预测结果(B,seq,head,num)
+            deprel_scores = deprel_scores.reshape(-1, self.len_deprel)
+
+            loss += self.criterion(deprel_scores, deprel_target.reshape(-1))
 
             if self.linearization:
                 # lin_scores = lin_scores[:, 1:].masked_select(goldmask)
-                lin_scores = torch.gather(lin_scores[:, 1:], 2, heads.unsqueeze(2)).view(-1)
-                lin_scores = torch.cat([-lin_scores.unsqueeze(1) / 2, lin_scores.unsqueeze(1) / 2], 1)
+                lin_scores = torch.gather(
+                    lin_scores[:, 1:], 2, heads.unsqueeze(2)).view(-1)
+                lin_scores = torch.cat(
+                    [-lin_scores.unsqueeze(1) / 2, lin_scores.unsqueeze(1) / 2], 1)
                 # lin_target = (head_offset[:, 1:] > 0).long().masked_select(goldmask)
-                lin_target = torch.gather((head_offset[:, 1:] > 0).long(), 2, heads.unsqueeze(2))
-                loss += self.criterion(lin_scores.contiguous(), lin_target.view(-1))
+                lin_target = torch.gather(
+                    (head_offset[:, 1:] > 0).long(), 2, heads.unsqueeze(2))
+                loss += self.criterion(lin_scores.contiguous(),
+                                       lin_target.view(-1))
 
             if self.distance:
                 # dist_kld = dist_kld[:, 1:].masked_select(goldmask)
@@ -417,7 +428,8 @@ class Parser(Model, GraphParser):
             loss /= sum(seq_lens)  # number of words
         else:
             loss = 0
-            unlabeled = F.log_softmax(unlabeled_scores, 2).detach().cpu().numpy()
+            unlabeled = F.log_softmax(
+                unlabeled_scores, 2).detach().cpu().numpy()
             deprels = deprel_scores.max(3)[1].detach().cpu().numpy()
 
             head_seqs = [chuliu_edmonds_one_root(adj[:l, :l])[1:] for adj, l in
@@ -446,6 +458,7 @@ class Parser(Model, GraphParser):
         """
         Evaluate the performance of prediction.
         reset = False， 计数，返回单次结果， True 用计数计算并清空
+        传进来的tree带有虚根
         """
         if reset:
             arc, label, sample = self.metrics_counter.values()
@@ -464,7 +477,8 @@ class Parser(Model, GraphParser):
         # mask out <root> tag
         seq_mask[:, 0] = 0
         head_pred_correct = (head_pred == head_gt).long() * seq_mask
-        label_pred_correct = (label_pred == label_gt).long() * head_pred_correct
+        label_pred_correct = (
+            label_pred == label_gt).long() * head_pred_correct
         arc = head_pred_correct.sum().item()
         label = label_pred_correct.sum().item()
         sample = seq_mask.sum().item()

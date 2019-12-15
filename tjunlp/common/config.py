@@ -10,9 +10,10 @@ class Config(object):
     Settings and hyper parameters.
     """
 
-    def __init__(self, cfg: Dict[str, Dict], path: str):
+    def __init__(self, cfg: Dict[str, Dict], path: str, debug: bool = False):
         self.cfg = cfg
         self.path = path
+        self.debug = debug
         return
 
     def __getitem__(self, key: str):
@@ -40,7 +41,14 @@ class Config(object):
                 cfg = yaml.load(file, Loader=yaml.FullLoader)
                 return cls(cfg, file_path)
         else:
-            raise ConfigurationError(f"The config file at {file_path} has a wrong type!")
+            raise ConfigurationError(
+                f"The config file at {file_path} has a wrong type!")
+
+    @classmethod
+    def from_args(cls, args):
+        cfg = cls.from_file(args.yaml)
+        cfg.debug = args.debug
+        return cfg
 
     def to_file(self, file_path: str) -> None:
         with open(file_path, mode='w+') as file:

@@ -1,12 +1,17 @@
+"""
+My trainer.
+"""
+
 from typing import Dict, Any, List
 import os
 import time
+import shutil
 from datetime import datetime
 
 import torch
 # import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
-from torch.optim.optimizer import Optimizer
+from torch.optim.optimizer import Optimizer # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -78,6 +83,7 @@ class Trainer(object):
                  save_after: int = 30,
                  save_dir: str = DEFAULT_SAVE_DIR,
                  save_strategy: str = SAVE_STRATEGY_BEST,
+                 tensorboard: bool = False,
                  log_batch: bool = False,
                  log_dir: str = DEFAULT_LOG_DIR,
                  log_interval: int = 10,
@@ -94,12 +100,13 @@ class Trainer(object):
         self.clip_grad = clip_grad
         self.early_stop = early_stop
         self.epoch_num = epoch_num
-        self.epoch_start = epoch_start
+        self.epoch_start = epoch_start if pre_train_path else 0
         self.update_every = update_every  # 梯度累积的步数 i.e. accumulation_steps
         self.validate_every = validate_every
         self.validate_after = validate_after
         if validate_every < update_every or validate_every % update_every != 0:
-            raise ConfigurationError("You can't validate and save before step() !")
+            raise ConfigurationError(
+                "You can't validate and save before step() !")
         self.save_after = save_after
         self.save_dir = save_dir
         self.save_strategy = save_strategy
@@ -110,28 +117,31 @@ class Trainer(object):
         if device == DEVICE_CUDA and not torch.cuda.is_available():
             raise ConfigurationError("No GPU found, please run at CPU!")
         self.device = torch.device(device)
-        self.dev_device = torch.device(DEVICE_CPU) if dev_on_cpu else self.device
+        self.dev_device = torch.device(
+            DEVICE_CPU) if dev_on_cpu else self.device
         self.time_epoch = 0
         self.time_eval = 0
         self.best_metric = None
-        self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}  # todo early stop check
+        self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}
         self.stop_counter = 0
 
         for key in (KEY_TRAIN, KEY_DEV):
             if not self.dataset[key].indexed:
                 self.dataset[key].index_dataset(vocabulary)
 
-        if pre_train_path:  # 有path则是继续训练
-            self.log_dir = log_dir
+        if tensorboard:
+            if pre_train_path:  # 有path则是继续训练
+                self.log_dir = log_dir
+            else:
+                if not os.path.exists(os.path.abspath(log_dir)):
+                    os.mkdir(log_dir)
+                self.log_dir = f"{log_dir}/{prefix + str(datetime.now())[:16].replace(' ', '_')}"
+                if os.path.exists(self.log_dir):
+                    shutil.rmtree(self.log_dir)
+                os.mkdir(self.log_dir)
+            self.writer = SummaryWriter(log_dir=self.log_dir)
         else:
-            if not os.path.exists(os.path.abspath(log_dir)):
-                os.mkdir(log_dir)
-            self.log_dir = f"{log_dir}/{prefix + str(datetime.now())[:16].replace(' ', '_')}"
-            if os.path.exists(self.log_dir):
-                import shutil
-                shutil.rmtree(self.log_dir)
-            os.mkdir(self.log_dir)
-        self.writer = SummaryWriter(log_dir=self.log_dir)
+            self.writer = None
 
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
@@ -156,20 +166,21 @@ class Trainer(object):
 
         time_train_start = time.time()
         for epoch in range(self.epoch_start, self.epoch_num):
-            step = True if (epoch + 1) % self.update_every == 0 else False
-            self._train_once(epoch, train_loader, self.model, self.device, step)
+            step = bool((epoch + 1) % self.update_every == 0)
+            self._train_once(epoch, train_loader,
+                             self.model, self.device, step)
             if self.validate_after < epoch and (epoch + 1) % self.validate_every == 0:
                 self._eval_once(epoch, dev_loader, self.model, self.dev_device)
-            if self.scheduler:
-                self.scheduler.step(epoch=epoch)
-            if self.save_strategy == SAVE_STRATEGY_ALL:
+            if epoch > self.save_after and self.save_strategy == SAVE_STRATEGY_ALL:
                 self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
-                break  # todo 检查机制待完善
+                break  # TODO 检查机制待完善
 
         time_train = time.time() - time_train_start
-        print(f'\n[{datetime.now()}] training compete, time: {sec_to_time(time_train)} .')
-        self.writer.close()
+        print(
+            f'\n[{datetime.now()}] training compete, time: {sec_to_time(time_train)} .')
+        if self.writer:
+            self.writer.close()
         return
 
     def eval(self, dataset: DataSet = None, batch_size: int = None, device: str = None):
@@ -191,15 +202,15 @@ class Trainer(object):
         else:
             tqdm_desc = f"[{sys_info()}] Eval stage..."
 
-        for batch_i, batch in Tqdm(enumerate(loader), desc=tqdm_desc, total=len(loader)):
+        for i, batch in Tqdm(enumerate(loader), desc=tqdm_desc, total=len(loader)):
             to_device(batch, device)
             with torch.no_grad():
                 output = self.model(**batch)
-            pred, metric = output['pred'], output['metric']
+            metric = output['metric']
 
-            if batch_i % self.log_interval == 0:
+            if i % self.log_interval == 0:
                 if self.log_batch:
-                    Tqdm.write(f"\r[{sys_info()}] {batch_i}/{len(loader)} : "
+                    Tqdm.write(f"\r[{sys_info()}] {i}/{len(loader)} : "
                                f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
 
         self.time_eval = time.time() - time_eval_start
@@ -225,7 +236,7 @@ class Trainer(object):
         else:
             tqdm_desc = f"[{sys_info()}] Train epoch {epoch}"
 
-        for batch_i, batch in Tqdm(enumerate(loader), total=len(loader), desc=tqdm_desc):
+        for i, batch in Tqdm(enumerate(loader), total=len(loader), desc=tqdm_desc):
             to_device(batch, device)
             loss = model(**batch)['loss']
             loss_epoch += loss.item()
@@ -235,23 +246,28 @@ class Trainer(object):
                     clip_grad_func(model.parameters(), **self.clip_grad)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+                if self.scheduler:
+                    self.scheduler.step(epoch=epoch)
 
-            if batch_i % self.log_interval == 0:
+            if i % self.log_interval == 0:
                 if self.log_batch:
-                    Tqdm.write(f"[{sys_info()}] {batch_i}/{len(loader)} : "
+                    Tqdm.write(f"[{sys_info()}] {i}/{len(loader)} : "
                                f"Loss= {loss.item():.4f}")
-                n_example = (epoch * len(loader) + batch_i) * loader.batch_size
-                self.writer.add_scalar('Train/loss', loss.item(), n_example)
+                if self.writer:
+                    n_example = (epoch * len(loader) + i) * loader.batch_size
+                    self.writer.add_scalar(
+                        'Train/loss', loss.item(), n_example)
 
         self.time_epoch = time.time() - time_epoch_start
         loss_epoch /= len(loader)
-        lr = self.scheduler.get_lr()
-        if isinstance(lr, List) and len(lr) == 1:
-            self.writer.add_scalar('Train/learning_rate', lr[0], epoch)
-        else:
-            raise NotImplementedError("我还没想咋写")
-        self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
-        self.writer.flush()
+        if self.writer:
+            lr = self.scheduler.get_lr()
+            if isinstance(lr, List) and len(lr) == 1:
+                self.writer.add_scalar('Train/learning_rate', lr[0], epoch)
+            else:
+                raise NotImplementedError("我还没想咋写")
+            self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
+            self.writer.flush()
         Tqdm.write(f"===> Epoch {epoch} compete, avg loss {loss_epoch:.4f}, "
                    f"time {sec_to_time(self.time_epoch)}, "
                    f"remaining {sec_to_time(self.time_left(epoch))}")
@@ -271,26 +287,28 @@ class Trainer(object):
         else:
             tqdm_desc = f"[{sys_info()}] Eval at no.{epoch}"
 
-        for batch_i, batch in Tqdm(enumerate(loader), desc=tqdm_desc, total=len(loader)):
+        for i, batch in Tqdm(enumerate(loader), desc=tqdm_desc, total=len(loader)):
             to_device(batch, device)
             with torch.no_grad():
                 output = model(**batch)
             loss, metric = output['loss'], output['metric']
             loss_epoch += loss.item()
 
-            if batch_i % self.log_interval == 0:
+            if i % self.log_interval == 0:
                 if self.log_batch:
-                    Tqdm.write(f"\r[{sys_info()}] {batch_i}/{len(loader)} : "
+                    Tqdm.write(f"\r[{sys_info()}] {i}/{len(loader)} : "
                                f"Loss: {loss.item():.4f}")
-                n_example = (epoch * len(loader) + batch_i) * loader.batch_size
-                self.writer.add_scalar('Dev/loss', loss.item(), n_example)
+                if self.writer:
+                    n_example = (epoch * len(loader) + i) * loader.batch_size
+                    self.writer.add_scalar('Dev/loss', loss.item(), n_example)
 
         self.time_eval = time.time() - time_eval_start
         loss_epoch /= len(loader)
         metric = model.get_metrics(reset=True)
         metric['epoch_loss'] = loss_epoch
-        self.add_scalars('Dev', metric, epoch)
-        self.writer.flush()
+        if self.writer:
+            self.add_scalars('Dev', metric, epoch)
+            self.writer.flush()
 
         Tqdm.write(f"===> Eval compete, time {sec_to_time(self.time_eval)}, "
                    f"remaining {sec_to_time(self.time_left(epoch))}, "
@@ -330,7 +348,8 @@ class Trainer(object):
             'log_dir': self.log_dir
         }
 
-        path = os.path.normpath(f"{self.save_dir}/{self.prefix}_{epoch}_{comment}.bac")
+        path = os.path.normpath(
+            f"{self.save_dir}/{self.prefix}_{epoch}_{comment}.bac")
         torch.save(checkpoint, path)
 
         self.cfg['trainer']['pre_train_path'] = path
