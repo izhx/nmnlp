@@ -11,7 +11,7 @@ from datetime import datetime
 import torch
 # import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
-from torch.optim.optimizer import Optimizer # pylint: disable=no-name-in-module
+from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -26,6 +26,7 @@ from tjunlp.data import KEY_TRAIN, KEY_DEV
 
 EARLY_STOP_THRESHOLD = 5
 
+SAVE_STRATEGY_NO = 'no'
 SAVE_STRATEGY_ALL = 'all'
 SAVE_STRATEGY_BEST = 'best'
 
@@ -171,10 +172,12 @@ class Trainer(object):
                              self.model, self.device, step)
             if self.validate_after < epoch and (epoch + 1) % self.validate_every == 0:
                 self._eval_once(epoch, dev_loader, self.model, self.dev_device)
-            if epoch > self.save_after and self.save_strategy == SAVE_STRATEGY_ALL:
-                self.checkpoint(epoch)
+            if self.save_strategy != SAVE_STRATEGY_NO:
+                if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
+                    self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
                 break  # TODO 检查机制待完善
+            self.reload_cfg()
 
         time_train = time.time() - time_train_start
         print(
@@ -245,7 +248,7 @@ class Trainer(object):
                 if self.clip_grad:
                     clip_grad_func(model.parameters(), **self.clip_grad)
                 self.optimizer.step()
-                self.optimizer.zero_grad()
+                self.model.zero_grad()
                 if self.scheduler:
                     self.scheduler.step(epoch=epoch)
 
@@ -261,9 +264,14 @@ class Trainer(object):
         self.time_epoch = time.time() - time_epoch_start
         loss_epoch /= len(loader)
         if self.writer:
-            lr = self.scheduler.get_lr()
+            if self.scheduler:
+                lr = self.scheduler.get_lr()
+            else:
+                lr = self.optimizer.param_groups[0]['lr']
             if isinstance(lr, List) and len(lr) == 1:
                 self.writer.add_scalar('Train/learning_rate', lr[0], epoch)
+            elif isinstance(lr, float):
+                self.writer.add_scalar('Train/learning_rate', lr, epoch)
             else:
                 raise NotImplementedError("我还没想咋写")
             self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
@@ -334,19 +342,15 @@ class Trainer(object):
         return
 
     def checkpoint(self, epoch: int, comment: str = ''):
-        self.cfg = self.cfg.reload()
-
-        for key in ('epoch_num', 'validate_every', 'validate_after',
-                    'save_after', 'save_strategy', 'log_batch', 'log_interval'):
-            if key in self.cfg['trainer']:
-                self.__setattr__(key, self.cfg['trainer'][key])
+        self.reload_cfg()
 
         checkpoint = {
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
-            'scheduler': self.scheduler.state_dict(),
             'log_dir': self.log_dir
         }
+        if self.scheduler:
+            checkpoint['scheduler'] = self.scheduler.state_dict()
 
         path = os.path.normpath(
             f"{self.save_dir}/{self.prefix}_{epoch}_{comment}.bac")
@@ -362,8 +366,9 @@ class Trainer(object):
         checkpoint = torch.load(self.pre_train_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.scheduler.load_state_dict(checkpoint['scheduler'])
-        # self.log_dir = checkpoint['log_dir']  # 也可没有
+        if self.scheduler:
+            self.scheduler.load_state_dict(checkpoint['scheduler'])
+        self.log_dir = checkpoint['log_dir']
         print(f"=======> Loaded checkpoint from {self.pre_train_path}")
         return self
 
@@ -372,3 +377,12 @@ class Trainer(object):
         for key, value in value_dict.items():
             key = f'{key_prefix}_{key}' if key_prefix else key
             self.writer.add_scalar(f"{main_tag}/{key}", value, global_step)
+
+    def reload_cfg(self):
+        self.cfg = self.cfg.reload()
+
+        for key in ('epoch_num', 'validate_every', 'validate_after',
+                    'save_after', 'save_strategy', 'log_batch', 'log_interval'):
+            if key in self.cfg['trainer']:
+                self.__setattr__(key, self.cfg['trainer'][key])
+        return

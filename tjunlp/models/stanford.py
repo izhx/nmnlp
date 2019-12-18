@@ -102,11 +102,11 @@ class WordDropout(nn.Module):
         super().__init__()
         self.drop_prob = drop_prob
 
-    def forward(self, x, replacement=None):
+    def forward(self, x: torch.Tensor, replacement=None):
         if not self.training or self.drop_prob == 0:
             return x
 
-        mask_size = [y for y in x.size()]
+        mask_size = list(x.shape)
         mask_size[-1] = 1
         drop_mask = torch.rand(*mask_size, device=x.device) < self.drop_prob
 
@@ -125,9 +125,9 @@ class PairwiseBilinear(nn.Module):
     def __init__(self, input1_size, input2_size, output_size, bias=True):
         super().__init__()
 
-        self.input1_size = input1_size
-        self.input2_size = input2_size
-        self.output_size = output_size
+        self.input1_size = input1_size  # D1
+        self.input2_size = input2_size  # D2
+        self.output_size = output_size  # O
 
         self.weight = nn.Parameter(torch.zeros(input1_size, input2_size, output_size),
                                    requires_grad=True)
@@ -137,19 +137,18 @@ class PairwiseBilinear(nn.Module):
     def forward(self, input1, input2):
         n, l1, d1, _, l2, d2, o = * \
             list(input1.size()), *list(input2.size()), self.output_size
-
-        # ((N x L1) x D1) * (D1 x (D2 x O)) -> (N x L1) x (D2 x O)
+        # (N*L1, D1) * (D1, D2*O) -> (N*L1, D2*O)
         temp = torch.mm(input1.view(-1, d1), self.weight.view(-1, d2 * o))
-        # (N x L2 x D2) -> (N x D2 x L2)
+        # (N, L2, D2) -> (N, D2, L2)
         input2 = input2.transpose(1, 2)
-        # (N L1 d2 O) -> (N L1 O d2)
+        # (N, L1, d2, O) -> (N, L1, O, d2)
         temp = temp.view(n, l1, d2, o).transpose(2, 3)
-        # (N x (L1 x O) x D2) * (N x D2 x L2) -> (N x (L1 x O) x L2)
+        # (N, L1*O, D2) * (N, D2, L2) -> (N, L1*O, L2)
         output = temp.reshape(n, l1*o, d2).bmm(input2)
-        # (N x (L1 x O) x L2) -> (N x L1 x L2 x O)
+        # (N, L1*O, L2) -> (N, L1, L2, O)
         output = output.view(n, l1, o, l2).transpose(2, 3)
-
-        return output
+        return output  # einsum will cause cuda out of memory, fuck
+        # return torch.einsum('bim,bjn,mno->bijo', input1, input2, self.weight)
 
 
 class BiaffineScorer(nn.Module):
