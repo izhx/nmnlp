@@ -369,6 +369,7 @@ class Trainer(object):
         if self.scheduler:
             self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.log_dir = checkpoint['log_dir']
+        self.writer = SummaryWriter(log_dir=self.log_dir)
         print(f"=======> Loaded checkpoint from {self.pre_train_path}")
         return self
 
