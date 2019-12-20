@@ -1,5 +1,7 @@
 import torch
 
+from .bert_embedding import PackedBertEmbedding
+
 
 class TokenEmbedder(torch.nn.Module):
     """
@@ -23,3 +25,10 @@ class TokenEmbedder(torch.nn.Module):
         token.  This is `not` the shape of the returned tensor, but the last element of that shape.
         """
         raise NotImplementedError
+
+
+def build_word_embedding(name, freeze: str = 'all', **kwargs):
+    if 'bert' in name:
+        return PackedBertEmbedding(name, freeze), 768
+    if name == 'plain':
+        return torch.nn.Embedding(**kwargs), kwargs['embedding_dim']

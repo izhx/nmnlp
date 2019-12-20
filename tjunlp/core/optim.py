@@ -5,12 +5,15 @@ from torch.optim import Adam, SGD
 from torch.optim.adamw import AdamW
 from torch.optim import lr_scheduler
 
+from transformers import AdamW as BertAdamW
+
 from tjunlp.common.checks import ConfigurationError
 
 _OPTIMIZER = {
     'Adam': Adam,
     'SGD': SGD,
     'AdamW': AdamW,
+    'BertAdamW': BertAdamW
 }
 
 _SCHEDULER = {

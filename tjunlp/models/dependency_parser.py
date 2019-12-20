@@ -1,12 +1,8 @@
 """
 Biaffine Dependency Parser 的 Pytorch 实现.
 """
-__all__ = [
-    "BiaffineParser",
-    "GraphParser"
-]
 
-from typing import Dict, List
+from typing import Dict, List, Any
 from collections import defaultdict, OrderedDict
 from overrides import overrides
 
@@ -14,12 +10,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
 
 from tjunlp.core.model import Model
+from tjunlp.modules.embedding import build_word_embedding
 from tjunlp.modules.dropout import TimestepDropout
-from tjunlp.modules.encoder.transformer import TransformerEncoder
-from tjunlp.modules.encoder.variational_rnn import VarLSTM
+from tjunlp.modules.encoder import build_encoder
 from tjunlp.modules.util import initial_parameter
 
 
@@ -282,174 +278,101 @@ class LabelBilinear(nn.Module):
         return output
 
 
-class BiaffineParser(Model, GraphParser):
+class DenpendencyEmbedding(nn.Module):
+    """Construct the embedding for denpendency parsing.
     """
-    Biaffine Dependency Parser 实现.
-    论文参考 `Deep Biaffine Attention for Neural Dependency Parsing (Dozat and Manning, 2016) <https://arxiv.org/abs/1611.01734>`_ .
+
+    def __init__(self,
+                 num_upos: int,
+                 embedding_dim: int = 256,
+                 encoder: Dict[str, Any] = None):
+        super(DenpendencyEmbedding, self).__init__()
+        self.embedding = nn.Embedding(num_upos, embedding_dim, padding_idx=0)
+        if encoder is None:
+            self.encoder = None
+            self.output_size = embedding_dim
+        else:
+            self.encoder = build_encoder(embedding_dim, **encoder)
+            self.output_size = self.encoder.output_size
+
+    def forward(self, upos: torch.Tensor, seq_lens: torch.Tensor):  # pylint:disable=arguments-differ
+        upos = self.embedding(upos)
+        if self.encoder is not None:
+            upos = self.encoder(upos, seq_lens)
+        return upos
+
+
+class DependencyParser(Model, GraphParser):
+    """
+    主Parser，可更换不同的embedding和encoder。
     """
 
     def __init__(self,
                  criterion,
-                 emb_matrix,
-                 pos_vocab_size: int,
                  num_label: int,
-                 pos_emb_dim: int = 50,
-                 rnn_layers: int = 1,
-                 rnn_hidden_size: int = 200,
-                 arc_mlp_size: int = 100,
-                 label_mlp_size: int = 100,
-                 dropout: float = 0.3,
-                 encoder='lstm',
-                 use_greedy_infer=False):
-        """
-        :param emb_matrix: 单词词典, 可以是 tuple, 包括(num_embedings, embedding_dim), 即
-            embedding的大小和每个词的维度. 也可以传入 nn.Embedding 对象,
-            此时就以传入的对象作为embedding
-        :param pos_vocab_size: part-of-speech 词典大小
-        :param pos_emb_dim: part-of-speech 向量维度
-        :param num_label: 边的类别个数
-        :param rnn_layers: rnn encoder的层数
-        :param rnn_hidden_size: rnn encoder 的隐状态维度
-        :param arc_mlp_size: 边预测的MLP维度
-        :param label_mlp_size: 类别预测的MLP维度
-        :param dropout: dropout概率.
-        :param encoder: encoder类别, 可选 ('lstm', 'var-lstm', 'transformer'). Default: lstm
-        :param use_greedy_infer: 是否在inference时使用贪心算法.
-            若 ``False`` , 使用更加精确但相对缓慢的MST算法. Default: ``False``
-        """
-        super().__init__(criterion)
-        rnn_out_size = 2 * rnn_hidden_size
-        word_hid_dim = pos_hid_dim = rnn_hidden_size
-        self.word_embedding = nn.Embedding.from_pretrained(
-            emb_matrix, freeze=True)
-        word_emb_dim = self.word_embedding.embedding_dim
-        self.pos_embedding = nn.Embedding(
-            num_embeddings=pos_vocab_size, embedding_dim=pos_emb_dim)
-        self.word_fc = nn.Linear(word_emb_dim, word_hid_dim)
-        self.pos_fc = nn.Linear(pos_emb_dim, pos_hid_dim)
-        self.word_norm = nn.LayerNorm(word_hid_dim)
-        self.pos_norm = nn.LayerNorm(pos_hid_dim)
-        self.encoder_name = encoder
-        self.max_len = 512
-
-        # self.encoder = build_backbone(encoder, rnn_layers, rnn_hidden_size,
-        #                               rnn_out_size, dropout, max_len=self.max_len)
-
-        if encoder == 'var-lstm':
-            self.encoder = VarLSTM(input_size=word_hid_dim + pos_hid_dim,
-                                   hidden_size=rnn_hidden_size,
-                                   num_layers=rnn_layers,
-                                   bias=True,
-                                   batch_first=True,
-                                   input_dropout=dropout,
-                                   hidden_dropout=dropout,
-                                   bidirectional=True)
-        elif encoder == 'lstm':
-            self.encoder = nn.LSTM(input_size=word_hid_dim + pos_hid_dim,
-                                   hidden_size=rnn_hidden_size,
-                                   num_layers=rnn_layers,
-                                   bias=True,
-                                   batch_first=True,
-                                   dropout=dropout,
-                                   bidirectional=True)
-        elif encoder == 'transformer':
-            n_head = 16
-            d_k = d_v = int(rnn_out_size / n_head)
-            if (d_k * n_head) != rnn_out_size:
-                raise ValueError(
-                    'unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
-            self.position_emb = nn.Embedding(num_embeddings=self.max_len,
-                                             embedding_dim=rnn_out_size, )
-            self.encoder = TransformerEncoder(num_layers=rnn_layers,
-                                              model_size=rnn_out_size,
-                                              inner_size=1024,
-                                              key_size=d_k,
-                                              value_size=d_v,
-                                              num_head=n_head,
-                                              dropout=dropout, )
+                 num_upos: int,
+                 word_embedding: Dict[str, Any],
+                 other_embedding: Dict[str, Any] = None,
+                 encoder: Dict[str, Any] = None,
+                 use_mlp: bool = True,
+                 arc_size: int = 192,
+                 label_size: int = 192,
+                 droupout: float = 0,
+                 use_greedy_infer: bool = False,
+                 **kwargs):
+        super().__init__()
+        self.word_embedding, feat_size = build_word_embedding(**word_embedding)
+        if other_embedding is not None:
+            self.other_embedding = DenpendencyEmbedding(
+                num_upos, **other_embedding)
+            feat_size += self.other_embedding.output_size
         else:
-            raise ValueError('unsupported encoder type: {}'.format(encoder))
+            self.other_embedding = None
 
-        self.mlp = nn.Sequential(nn.Linear(rnn_out_size, arc_mlp_size * 2 + label_mlp_size * 2),
-                                 nn.ELU(),
-                                 TimestepDropout(p=dropout), )
-        self.arc_mlp_size = arc_mlp_size
-        self.label_mlp_size = label_mlp_size
-        self.arc_biaffine = ArcBiaffine(arc_mlp_size, bias=True)
-        self.label_bilinear = LabelBilinear(
-            label_mlp_size, label_mlp_size, num_label, bias=True)
-        self.use_greedy_infer = use_greedy_infer
-        self.reset_parameters()
-        self.dropout = dropout
+        if encoder is not None:
+            self.encoder = build_encoder(feat_size, **encoder)
+            feat_size = self.encoder.output_size
+        else:
+            self.encoder = None
+
+        if use_mlp:
+            self.mlp = nn.Sequential(
+                nn.Linear(feat_size, (arc_size + label_size) * 2),
+                nn.ReLU(inplace=True),
+                TimestepDropout(p=droupout))
+        else:
+            if encoder is None:
+                raise ValueError("Encoder and MLP can't be None at same time!")
+            self.mlp = None
+            if feat_size != 2 * (arc_size + label_size):
+                raise ValueError("Wrong arc and label size!")
+
+        self.arc_biaffine = ArcBiaffine(arc_size)
+        self.label_bilinear = LabelBilinear(label_size, label_size, num_label)
         # for calculate metrics precisely
         self.metrics_counter = OrderedDict({'arc': 0, 'label': 0, 'sample': 0})
+        self.split_sizes = [arc_size, arc_size, label_size, label_size]
+        self.use_greedy_infer = use_greedy_infer
 
-    def reset_parameters(self):
-        for m in self.modules():
-            if isinstance(m, nn.Embedding):
-                continue
-            elif isinstance(m, nn.LayerNorm):
-                nn.init.constant_(m.weight, 0.1)
-                nn.init.constant_(m.bias, 0)
-            else:
-                for p in m.parameters():
-                    nn.init.normal_(p, 0, 0.1)
+    def forward(self,  # pylint:disable=arguments-differ
+                words: torch.Tensor,
+                upos: torch.Tensor,
+                mask: torch.Tensor,  # 有词的地方为True
+                seq_lens: torch.Tensor = None,  # bert空位也有id，普通的空位为0
+                heads: torch.Tensor = None,
+                deprel: torch.Tensor = None,
+                **kwargs) -> Dict[str, Any]:
+        feat = self.word_embedding(words)
+        if self.other_embedding:
+            upos = self.other_embedding(upos, seq_lens)
+            feat = torch.cat([feat, upos], dim=2)
+        if self.encoder is not None:
+            feat = self.encoder(feat, seq_lens)
+        if self.mlp is not None:
+            feat = self.mlp(feat)
+        arc_head, arc_dep, label_head, label_dep = feat.split(
+            self.split_sizes, dim=2)
 
-    def forward(self, words: torch.Tensor, upos: torch.Tensor, seq_lens,
-                heads: torch.Tensor = None, deprel: torch.Tensor = None, **kwargs):
-        """模型forward阶段
-        :param words: [batch_size, seq_len] 输入word序列
-        :param upos: [batch_size, seq_len] 输入pos序列
-        :param seq_lens: [batch_size] 输入序列长度
-        :param heads: [batch_size, seq_len] 输入真实标注的heads, 仅在训练阶段有效,
-            用于训练label分类器. 若为 ``None`` , 使用预测的heads输入到label分类器
-            Default: ``None``ß
-        :param word_ids:
-        :param lemma:
-        :param deprel:
-        :return dict: parsing
-                结果::
-                    pred1: [batch_size, seq_len, seq_len] 边预测logits
-                    pred2: [batch_size, seq_len, num_label] label预测logits
-                    pred3: [batch_size, seq_len] heads的预测结果, 在 ``heads=None`` 时预测
-        """
-        # prepare embeddings
-        batch_size, length = words.shape
-        # print('forward {} {}'.format(batch_size, seq_len))
-
-        # get sequence mask
-        mask = seq_len_to_mask(seq_lens, max_len=length).long()
-
-        word = self.word_embedding(words)  # [N,L] -> [N,L,C_0]
-        pos = self.pos_embedding(upos)  # [N,L] -> [N,L,C_1]
-        word, pos = self.word_fc(word), self.pos_fc(pos)
-        word, pos = self.word_norm(word), self.pos_norm(pos)
-        x = torch.cat([word, pos], dim=2)  # -> [N,L,C]
-
-        # encoder, extract features
-        if self.encoder_name.endswith('lstm'):
-            # sort_lens, sort_idx = torch.sort(torch.tensor(seq_lens), dim=0, descending=True)
-            # x = x[sort_idx]
-            x = pack_padded_sequence(x, seq_lens, batch_first=True)
-            feat, _ = self.encoder(x)  # -> [N,L,C]
-            feat, _ = pad_packed_sequence(feat, batch_first=True)
-            # _, unsort_idx = torch.sort(sort_idx, dim=0, descending=False)
-            # feat = feat[unsort_idx]
-        else:
-            seq_range = torch.arange(
-                length, dtype=torch.long, device=x.device)[None, :]
-            x = x + self.position_emb(seq_range)
-            feat = self.encoder(x, mask.float())
-
-        # for arc biaffine
-        # mlp, reduce dim
-        feat = self.mlp(feat)
-        arc_sz, label_sz = self.arc_mlp_size, self.label_mlp_size
-        arc_dep, arc_head = feat[:, :, :arc_sz], feat[:, :, arc_sz:2 * arc_sz]
-        label_dep = feat[:, :, 2 * arc_sz:2 * arc_sz + label_sz]
-        label_head = feat[:, :, 2 * arc_sz + label_sz:]
-
-        # biaffine arc classifier
         arc_pred = self.arc_biaffine(arc_head, arc_dep)  # [N, L, L]
 
         # use gold or predicted arc to predict label
@@ -469,41 +392,71 @@ class BiaffineParser(Model, GraphParser):
                 heads = head_pred
 
         batch_range = torch.arange(
-            start=0, end=batch_size, dtype=torch.long, device=words.device).unsqueeze(1)
+            heads.shape[0], dtype=torch.long, device=heads.device).unsqueeze(1)
         label_head = label_head[batch_range, heads].contiguous()
-        deprel = deprel.gather(1, heads)  # 按照头的顺序调整
-
-        label_pred = self.label_bilinear(
-            label_head, label_dep)  # [N, L, num_label]
-        res_dict = {'arc': arc_pred, 'label': label_pred}
-        if head_pred is not None:
-            res_dict['head'] = head_pred
+        label_pred = self.label_bilinear(label_head, label_dep)  # (B,L,C)
+        output = {'arc': arc_pred, 'label': label_pred, 'head': head_pred}
 
         if self.training or self.evaluating:
-            loss = self.loss(arc_pred, label_pred, heads, deprel, seq_lens)
-            res_dict['loss'] = loss
+            deprel = deprel.gather(1, heads)  # 按照头的顺序调整
+            loss = self.loss(arc_pred, label_pred, heads, deprel, mask)
+            output['loss'] = loss
             if self.evaluating:
                 label_pred = label_pred.max(dim=2)[1]
-                res_dict['metric'] = self.get_metrics(
-                    head_pred, label_pred, heads, deprel, seq_lens)
+                output['metric'] = self.get_metrics(
+                    head_pred, label_pred, heads, deprel, mask)
 
-        return res_dict
+        return output
+
+    @overrides
+    def get_metrics(self,  # pylint:disable=arguments-differ
+                    head_pred: torch.Tensor = None,
+                    label_pred: torch.Tensor = None,
+                    head_gt: torch.Tensor = None,
+                    label_gt: torch.Tensor = None,
+                    mask: torch.Tensor = None,
+                    reset: bool = False) -> Dict[str, float]:
+        """
+        Evaluate the performance of prediction.
+        reset = False， 计数，返回单次结果， True 用计数计算并清空
+        """
+        if reset:
+            arc, label, sample = self.metrics_counter.values()
+            for k in self.metrics_counter:
+                self.metrics_counter[k] = 0
+            return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
+
+        if len(label_pred.shape) > len(label_gt.shape):
+            pred_dim, indices_dim = 2, 1
+            label_pred = label_pred.max(pred_dim)[indices_dim]
+        mask = mask.long()
+        # mask out <root> tag
+        mask[:, 0] = 0
+        head_pred_correct = (head_pred == head_gt).long() * mask
+        label_pred_correct = (
+            label_pred == label_gt).long() * head_pred_correct
+        arc = head_pred_correct.sum().item()
+        label = label_pred_correct.sum().item()
+        sample = mask.sum().item()
+        self.metrics_counter['arc'] += arc
+        self.metrics_counter['label'] += label
+        self.metrics_counter['sample'] += sample
+
+        return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
 
     @staticmethod
     def loss(arc_pred: torch.Tensor, label_pred: torch.Tensor,
-             arc_gt: torch.Tensor, label_gt: torch.Tensor, seq_len):
+             arc_gt: torch.Tensor, label_gt: torch.Tensor, mask: torch.Tensor):
         """
         计算parser的loss
         :param arc_pred: [batch_size, seq_len, seq_len] 边预测logits
         :param label_pred: [batch_size, seq_len, num_label] label预测logits
         :param arc_gt: [batch_size, seq_len] 真实边的标注
         :param label_gt: [batch_size, seq_len] 真实类别的标注
-        :param seq_len: [batch_size] 真实目标的长度
         :return loss: scalar
         """
 
         batch_size, length, _ = arc_pred.shape
-        mask = seq_len_to_mask(seq_len, max_len=length).to(arc_pred.device)
         flip_mask = (mask.eq(False))
         _arc_pred = arc_pred.clone()
         _arc_pred = _arc_pred.masked_fill(
@@ -523,47 +476,8 @@ class BiaffineParser(Model, GraphParser):
         label_nll = -label_loss.mean()
         return arc_nll + label_nll
 
-    @overrides
-    def get_metrics(self,
-                    head_pred: torch.Tensor = None,
-                    label_pred: torch.Tensor = None,
-                    head_gt: torch.Tensor = None,
-                    label_gt: torch.Tensor = None,
-                    seq_lens: torch.Tensor = None,
-                    reset: bool = False) -> Dict[str, float]:
-        """
-        Evaluate the performance of prediction.
-        reset = False， 计数，返回单次结果， True 用计数计算并清空
-        """
-        if reset:
-            arc, label, sample = self.metrics_counter.values()
-            for k in self.metrics_counter:
-                self.metrics_counter[k] = 0
-            return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
-
-        if len(label_pred.shape) > len(label_gt.shape):
-            pred_dim, indices_dim = 2, 1
-            label_pred = label_pred.max(pred_dim)[indices_dim]
-
-        if seq_lens is None:
-            seq_mask = head_pred.new_ones(head_pred.size(), dtype=torch.long)
-        else:
-            seq_mask = seq_len_to_mask(seq_lens).long()
-        # mask out <root> tag
-        seq_mask[:, 0] = 0
-        head_pred_correct = (head_pred == head_gt).long() * seq_mask
-        label_pred_correct = (
-            label_pred == label_gt).long() * head_pred_correct
-        arc = head_pred_correct.sum().item()
-        label = label_pred_correct.sum().item()
-        sample = seq_mask.sum().item()
-        self.metrics_counter['arc'] += arc
-        self.metrics_counter['label'] += label
-        self.metrics_counter['sample'] += sample
-
-        return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
-
-    def is_best(self, metric: Dict[str, float], former: Dict[str, float]) -> bool:
+    @staticmethod
+    def is_best(metric: Dict[str, float], former: Dict[str, float]) -> bool:
         if metric['UAS'] > former['UAS']:
             return True
         elif metric['UAS'] == former['UAS']:
@@ -571,39 +485,165 @@ class BiaffineParser(Model, GraphParser):
         else:
             return False
 
-# def build_backbone(name, rnn_layers, rnn_hidden_size, rnn_out_size, dropout, **kwargs):
-#     word_hid_dim = pos_hid_dim = rnn_hidden_size
-#     if name == 'var-lstm':
-#         backbone = VarLSTM(input_size=word_hid_dim + pos_hid_dim,
-#                            hidden_size=rnn_hidden_size,
-#                            num_layers=rnn_layers,
-#                            bias=True,
-#                            batch_first=True,
-#                            input_dropout=dropout,
-#                            hidden_dropout=dropout,
-#                            bidirectional=True)
-#     elif name == 'lstm':
-#         backbone = nn.LSTM(input_size=word_hid_dim + pos_hid_dim,
-#                            hidden_size=rnn_hidden_size,
-#                            num_layers=rnn_layers,
-#                            bias=True,
-#                            batch_first=True,
-#                            dropout=dropout,
-#                            bidirectional=True)
-#     elif name == 'transformer':
-#         n_head = 16
-#         d_k = d_v = int(rnn_out_size / n_head)
-#         if (d_k * n_head) != rnn_out_size:
-#             raise ValueError('unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
-#         position_emb = nn.Embedding(num_embeddings=kwargs['max_len'],
-#                                     embedding_dim=rnn_out_size, )
-#         backbone = TransformerEncoder(num_layers=rnn_layers,
-#                                       model_size=rnn_out_size,
-#                                       inner_size=1024,
-#                                       key_size=d_k,
-#                                       value_size=d_v,
-#                                       num_head=n_head,
-#                                       dropout=dropout, )
-#     else:
-#         raise ValueError('unsupported encoder type: {}'.format(name))
-#     return backbone
+
+# class BiaffineParser(DependencyParser, GraphParser):
+#     """
+#     Biaffine Dependency Parser 实现.
+#     论文参考 `Deep Biaffine Attention for Neural Dependency Parsing (Dozat and
+#     Manning, 2016) <https://arxiv.org/abs/1611.01734>`_ .
+#     """
+
+#     def __init__(self,
+#                  criterion,
+#                  emb_matrix,
+#                  pos_vocab_size: int,
+#                  num_label: int,
+#                  pos_emb_dim: int = 50,
+#                  rnn_layers: int = 1,
+#                  rnn_hidden_size: int = 200,
+#                  arc_mlp_size: int = 100,
+#                  label_mlp_size: int = 100,
+#                  dropout: float = 0.3,
+#                  encoder='lstm',
+#                  use_greedy_infer=False):
+#         """
+#         :param emb_matrix: 单词词典, 可以是 tuple, 包括(num_embedings, embedding_dim), 即
+#             embedding的大小和每个词的维度. 也可以传入 nn.Embedding 对象,
+#             此时就以传入的对象作为embedding
+#         :param pos_vocab_size: part-of-speech 词典大小
+#         :param pos_emb_dim: part-of-speech 向量维度
+#         :param num_label: 边的类别个数
+#         :param rnn_layers: rnn encoder的层数
+#         :param rnn_hidden_size: rnn encoder 的隐状态维度
+#         :param arc_mlp_size: 边预测的MLP维度
+#         :param label_mlp_size: 类别预测的MLP维度
+#         :param dropout: dropout概率.
+#         :param encoder: encoder类别, 可选 ('lstm', 'var-lstm', 'transformer'). Default: lstm
+#         :param use_greedy_infer: 是否在inference时使用贪心算法.
+#             若 ``False`` , 使用更加精确但相对缓慢的MST算法. Default: ``False``
+#         """
+#         super().__init__(criterion)
+#         rnn_out_size = 2 * rnn_hidden_size
+#         word_hid_dim = pos_hid_dim = rnn_hidden_size
+#         self.word_embedding = nn.Embedding.from_pretrained(
+#             emb_matrix, freeze=True)
+#         word_emb_dim = self.word_embedding.embedding_dim
+#         self.pos_embedding = nn.Embedding(
+#             num_embeddings=pos_vocab_size, embedding_dim=pos_emb_dim)
+#         self.word_fc = nn.Linear(word_emb_dim, word_hid_dim)
+#         self.pos_fc = nn.Linear(pos_emb_dim, pos_hid_dim)
+#         self.word_norm = nn.LayerNorm(word_hid_dim)
+#         self.pos_norm = nn.LayerNorm(pos_hid_dim)
+#         self.encoder_name = encoder
+#         self.max_len = 512
+
+#         # self.encoder = build_backbone(encoder, rnn_layers, rnn_hidden_size,
+#         #                               rnn_out_size, dropout, max_len=self.max_len)
+
+#         if encoder == 'var-lstm':
+#             self.encoder = VarLSTM(input_size=word_hid_dim + pos_hid_dim,
+#                                    hidden_size=rnn_hidden_size,
+#                                    num_layers=rnn_layers,
+#                                    bias=True,
+#                                    batch_first=True,
+#                                    input_dropout=dropout,
+#                                    hidden_dropout=dropout,
+#                                    bidirectional=True)
+#         elif encoder == 'lstm':
+#             self.encoder = nn.LSTM(input_size=word_hid_dim + pos_hid_dim,
+#                                    hidden_size=rnn_hidden_size,
+#                                    num_layers=rnn_layers,
+#                                    bias=True,
+#                                    batch_first=True,
+#                                    dropout=dropout,
+#                                    bidirectional=True)
+#         elif encoder == 'transformer':
+#             n_head = 16
+#             d_k = d_v = int(rnn_out_size / n_head)
+#             if (d_k * n_head) != rnn_out_size:
+#                 raise ValueError(
+#                     'unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
+#             self.position_emb = nn.Embedding(num_embeddings=self.max_len,
+#                                              embedding_dim=rnn_out_size, )
+#             self.encoder = TransformerEncoder(num_layers=rnn_layers,
+#                                               model_size=rnn_out_size,
+#                                               inner_size=1024,
+#                                               key_size=d_k,
+#                                               value_size=d_v,
+#                                               num_head=n_head,
+#                                               dropout=dropout, )
+#         else:
+#             raise ValueError('unsupported encoder type: {}'.format(encoder))
+
+#         self.mlp = nn.Sequential(nn.Linear(rnn_out_size, arc_mlp_size * 2 + label_mlp_size * 2),
+#                                  nn.ELU(),
+#                                  TimestepDropout(p=dropout), )
+#         self.arc_mlp_size = arc_mlp_size
+#         self.label_mlp_size = label_mlp_size
+#         self.arc_biaffine = ArcBiaffine(arc_mlp_size, bias=True)
+#         self.label_bilinear = LabelBilinear(
+#             label_mlp_size, label_mlp_size, num_label, bias=True)
+#         self.use_greedy_infer = use_greedy_infer
+#         self.reset_parameters()
+#         self.dropout = dropout
+
+#     def reset_parameters(self):
+#         for m in self.modules():
+#             if isinstance(m, nn.Embedding):
+#                 continue
+#             elif isinstance(m, nn.LayerNorm):
+#                 nn.init.constant_(m.weight, 0.1)
+#                 nn.init.constant_(m.bias, 0)
+#             else:
+#                 for p in m.parameters():
+#                     nn.init.normal_(p, 0, 0.1)
+
+#     def forward(self, words: torch.Tensor, upos: torch.Tensor, seq_lens,
+#                 heads: torch.Tensor = None, deprel: torch.Tensor = None, **kwargs):
+#         """模型forward阶段
+#         :param words: [batch_size, seq_len] 输入word序列
+#         :param upos: [batch_size, seq_len] 输入pos序列
+#         :param seq_lens: [batch_size] 输入序列长度
+#         :param heads: [batch_size, seq_len] 输入真实标注的heads, 仅在训练阶段有效,
+#             用于训练label分类器. 若为 ``None`` , 使用预测的heads输入到label分类器
+#             Default: ``None``ß
+#         :param word_ids:
+#         :param lemma:
+#         :param deprel:
+#         :return dict: parsing
+#                 结果::
+#                     pred1: [batch_size, seq_len, seq_len] 边预测logits
+#                     pred2: [batch_size, seq_len, num_label] label预测logits
+#                     pred3: [batch_size, seq_len] heads的预测结果, 在 ``heads=None`` 时预测
+#         """
+#         # prepare embeddings
+#         length = words.shape[1]
+#         # print('forward {} {}'.format(batch_size, seq_len))
+
+#         # get sequence mask
+#         mask = seq_len_to_mask(seq_lens, max_len=length).long()
+
+#         word = self.word_embedding(words)  # [N,L] -> [N,L,C_0]
+#         pos = self.pos_embedding(upos)  # [N,L] -> [N,L,C_1]
+#         word, pos = self.word_fc(word), self.pos_fc(pos)
+#         word, pos = self.word_norm(word), self.pos_norm(pos)
+#         x = torch.cat([word, pos], dim=2)  # -> [N,L,C]
+
+#         # encoder, extract features
+#         if self.encoder_name.endswith('lstm'):
+#             # sort_lens, sort_idx = torch.sort(torch.tensor(seq_lens), dim=0, descending=True)
+#             # x = x[sort_idx]
+#             x = pack_padded_sequence(x, seq_lens, batch_first=True)
+#             feat, _ = self.encoder(x)  # -> [N,L,C]
+#             feat, _ = pad_packed_sequence(feat, batch_first=True)
+#             # _, unsort_idx = torch.sort(sort_idx, dim=0, descending=False)
+#             # feat = feat[unsort_idx]
+#         else:
+#             seq_range = torch.arange(
+#                 length, dtype=torch.long, device=x.device)[None, :]
+#             x = x + self.position_emb(seq_range)
+#             feat = self.encoder(x, mask.float())
+
+#         # mlp, reduce dim
+#         feat = self.mlp(feat)
+#         return feat

@@ -166,7 +166,8 @@ class Trainer(object):
                                 collate_fn=self.dataset[KEY_DEV].collate_fn)
 
         time_train_start = time.time()
-        for epoch in range(self.epoch_start, self.epoch_num):
+        epoch = self.epoch_start
+        while epoch <= self.epoch_num:
             step = bool((epoch + 1) % self.update_every == 0)
             self._train_once(epoch, train_loader,
                              self.model, self.device, step)
@@ -178,6 +179,7 @@ class Trainer(object):
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
                 break  # TODO 检查机制待完善
             self.reload_cfg()
+            epoch += 1
 
         time_train = time.time() - time_train_start
         print(

@@ -12,7 +12,7 @@ class Model(torch.nn.Module):
 
     """
 
-    def __init__(self, criterion):
+    def __init__(self, criterion=None):
         super().__init__()
         self.criterion = criterion
         self.evaluating = False

@@ -36,6 +36,9 @@ class ConlluDataset(DataSet):
             logger.info("Reading UD instances from conllu dataset at: %s", file_path)
 
             for annotation in parse_incr(conllu_file):
+                # if len(annotation) < 3:
+                #     print(annotation)
+                #     continue
                 annotation = [x for x in annotation if isinstance(x["id"], int)]
                 if annotation[0]['id'] == 0:
                     for i in range(len(annotation)):
@@ -101,7 +104,7 @@ class ConlluDataset(DataSet):
             result.setdefault('pretrained', torch.zeros((len(batch), max_len), dtype=torch.int64))[
             i, :seq_lens] = torch.tensor(batch[o]['words'], dtype=torch.int64)
 
-        result['word_mask'] = torch.eq(result['words'], DEFAULT_PADDING_INDEX).bool()
+        result['mask'] = torch.eq(result['words'], DEFAULT_PADDING_INDEX).eq(False)
 
         for key in ('word_ids', 'words', 'lemma', 'upos', 'deprel', 'heads'):
             if torch.any(result[key] < 0):
