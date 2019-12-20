@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 
 from tjunlp.core.model import Model
-from tjunlp.modules.embedding import build_word_embedding
+from tjunlp.modules.embedding import build_word_embedding, DeepEmbedding
 from tjunlp.modules.dropout import TimestepDropout
 from tjunlp.modules.encoder import build_encoder
 from tjunlp.modules.util import initial_parameter
@@ -278,30 +278,6 @@ class LabelBilinear(nn.Module):
         return output
 
 
-class DenpendencyEmbedding(nn.Module):
-    """Construct the embedding for denpendency parsing.
-    """
-
-    def __init__(self,
-                 num_upos: int,
-                 embedding_dim: int = 256,
-                 encoder: Dict[str, Any] = None):
-        super(DenpendencyEmbedding, self).__init__()
-        self.embedding = nn.Embedding(num_upos, embedding_dim, padding_idx=0)
-        if encoder is None:
-            self.encoder = None
-            self.output_size = embedding_dim
-        else:
-            self.encoder = build_encoder(embedding_dim, **encoder)
-            self.output_size = self.encoder.output_size
-
-    def forward(self, upos: torch.Tensor, seq_lens: torch.Tensor):  # pylint:disable=arguments-differ
-        upos = self.embedding(upos)
-        if self.encoder is not None:
-            upos = self.encoder(upos, seq_lens)
-        return upos
-
-
 class DependencyParser(Model, GraphParser):
     """
     主Parser，可更换不同的embedding和encoder。
@@ -321,17 +297,17 @@ class DependencyParser(Model, GraphParser):
                  use_greedy_infer: bool = False,
                  **kwargs):
         super().__init__()
-        self.word_embedding, feat_size = build_word_embedding(**word_embedding)
+        self.word_embedding = build_word_embedding(**word_embedding)
+        feat_size: int = self.word_embedding.output_dim
         if other_embedding is not None:
-            self.other_embedding = DenpendencyEmbedding(
-                num_upos, **other_embedding)
-            feat_size += self.other_embedding.output_size
+            self.other_embedding = DeepEmbedding(num_upos, **other_embedding)
+            feat_size += self.other_embedding.output_dim
         else:
             self.other_embedding = None
 
         if encoder is not None:
             self.encoder = build_encoder(feat_size, **encoder)
-            feat_size = self.encoder.output_size
+            feat_size = self.encoder.output_dim
         else:
             self.encoder = None
 

@@ -27,6 +27,7 @@ class PackedBertEmbedding(torch.nn.Module):
         self.embeddings = bert.embeddings
         self.encoder = bert.encoder
         self.num_hidden_layers = bert.config.num_hidden_layers
+        self.output_dim = bert.config.hidden_size
 
     def forward(self, input_ids: torch.Tensor,  # pylint:disable=arguments-differ
                 head_mask: torch.Tensor = None,

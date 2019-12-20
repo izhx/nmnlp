@@ -1,21 +1,18 @@
 from typing import Dict, Union, List, Any
-import os
-import logging
 
 import torch
-
-from tjunlp.common.config import Config
 
 
 class Model(torch.nn.Module):
     """
-
+    Abstrat model class with more function.
     """
 
     def __init__(self, criterion=None):
         super().__init__()
         self.criterion = criterion
-        self.evaluating = False
+        self.evaluating: bool = False
+        self.freeze_modules: List[torch.nn.Module] = list()
 
     def forward(self, *inputs) -> Dict[str, Any]:
         """
@@ -65,8 +62,14 @@ class Model(torch.nn.Module):
         raise NotImplementedError
 
     def train_mode(self):
+        """
+        Keep specific modules at eval model.
+        """
         self.evaluating = False
-        return self.train()
+        self.train()
+        for module in self.freeze_modules:
+            module.eval()
+        return self
 
     def eval_mode(self):
         self.evaluating = True
@@ -75,11 +78,3 @@ class Model(torch.nn.Module):
     def test_mode(self):
         self.evaluating = False
         return self.eval()
-
-    @classmethod
-    def load(cls,
-             cfg: Config,
-             serialization_dir: str,
-             weights_file: str = None,
-             cuda_device: int = -1) -> 'Model':
-        pass

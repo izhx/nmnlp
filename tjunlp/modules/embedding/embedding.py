@@ -26,12 +26,11 @@ from tjunlp.common.checks import ConfigurationError
 from tjunlp.core.vocabulary import Vocabulary
 from tjunlp.common.file_utils import get_file_extension, cached_path, is_url_or_existing_file
 from tjunlp.modules import util
-from tjunlp.modules.embedding import TokenEmbedder
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Embedding(TokenEmbedder):
+class Embedding(torch.nn.Module):
     """
     A more featureful embedding module than the default in Pytorch.  Adds the ability to:
 
@@ -113,10 +112,6 @@ class Embedding(TokenEmbedder):
 
         if self.padding_index is not None:
             self.weight.data[self.padding_index].fill_(0)
-
-    @overrides
-    def get_output_dim(self) -> int:
-        return self.output_dim
 
     @overrides
     def forward(self, inputs):  # pylint: disable=arguments-differ

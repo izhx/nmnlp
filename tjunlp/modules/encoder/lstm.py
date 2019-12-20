@@ -22,7 +22,7 @@ class LstmEncoder(torch.nn.Module):
         super().__init__()
         self.encoder = torch.nn.LSTM(input_size, hidden_size, num_layers,
                                      bias, batch_first, dropout, bidirectional)
-        self.output_size = hidden_size * 2 if bidirectional else hidden_size
+        self.output_dim = hidden_size * 2 if bidirectional else hidden_size
 
     def forward(self, inputs, seq_lens=None, hx=None):  # pylint:disable=arguments-differ
         inputs = pack_padded_sequence(inputs, seq_lens, batch_first=True)
