@@ -321,9 +321,9 @@ class Trainer(object):
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
 
-        Tqdm.write(f"===> Eval compete, time {sec_to_time(self.time_eval)}, "
+        Tqdm.write(f"===> Eval  {epoch} compete, time {sec_to_time(self.time_eval)}, "
                    f"remaining {sec_to_time(self.time_left(epoch))}, "
-                   f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
+                   f"{', '.join(reversed([f'{k}: {v:.4f}' for k, v in metric.items()]))}")
 
         if self.save_after > epoch:
             return

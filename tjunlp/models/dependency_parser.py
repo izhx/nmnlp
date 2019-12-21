@@ -243,14 +243,23 @@ class DependencyParser(Model, GraphParser):
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
-                 arc_dim: int = 192,
-                 label_dim: int = 192,
-                 droupout: float = 0,
+                 transform_dim: int = 100,
+                 arc_dim: int = 250,
+                 label_dim: int = 50,
+                 dropout: float = 0,
                  use_greedy_infer: bool = False,
                  **kwargs):
         super().__init__()
-        self.word_embedding = build_word_embedding(**word_embedding)
-        feat_dim: int = self.word_embedding.output_dim
+        if transform_dim > 0:
+            word_embedding = build_word_embedding(**word_embedding)
+            self.word_embedding = nn.Sequential(
+                word_embedding,
+                nn.Linear(word_embedding.output_dim, transform_dim)
+            )
+            feat_dim: int = transform_dim
+        else:
+            self.word_embedding = build_word_embedding(**word_embedding)
+            feat_dim: int = self.word_embedding.output_dim
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(num_upos, **other_embedding)
             feat_dim += self.other_embedding.output_dim
@@ -258,7 +267,7 @@ class DependencyParser(Model, GraphParser):
             self.other_embedding = None
 
         if encoder is not None:
-            self.encoder = build_encoder(feat_dim, **encoder)
+            self.encoder = build_encoder(feat_dim, dropout=dropout, **encoder)
             feat_dim = self.encoder.output_dim
         else:
             self.encoder = None
@@ -267,7 +276,8 @@ class DependencyParser(Model, GraphParser):
             self.mlp = nn.Sequential(
                 nn.Linear(feat_dim, (arc_dim + label_dim) * 2),
                 nn.ReLU(inplace=True),
-                TimestepDropout(p=droupout))
+                TimestepDropout(p=dropout)
+            )
         else:
             if encoder is None:
                 raise ValueError("Encoder and MLP can't be None at same time!")
