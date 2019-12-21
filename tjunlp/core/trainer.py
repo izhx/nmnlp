@@ -278,9 +278,10 @@ class Trainer(object):
                 raise NotImplementedError("我还没想咋写")
             self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
             self.writer.flush()
-        Tqdm.write(f"===> Epoch {epoch} compete, avg loss {loss_epoch:.4f}, "
-                   f"time {sec_to_time(self.time_epoch)}, "
-                   f"remaining {sec_to_time(self.time_left(epoch))}")
+        Tqdm.write(f"===> Epoch {epoch} compete, time "
+                   f"{sec_to_time(self.time_epoch)}, remaining "
+                   f"{sec_to_time(self.time_left(epoch))}, epoch_loss "
+                   f"{loss_epoch:.4f}.")
         return
 
     def _eval_once(self,

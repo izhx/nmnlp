@@ -1,5 +1,5 @@
 """
-Biaffine Dependency Parser 的 Pytorch 实现.
+模块化Biaffine Dependency Parser，便于开展不同实验， 一些代码来自FastNLP.
 """
 
 from typing import Dict, List, Any
@@ -12,57 +12,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-from tjunlp.core.model import Model
-from tjunlp.modules.embedding import build_word_embedding, DeepEmbedding
-from tjunlp.modules.dropout import TimestepDropout
-from tjunlp.modules.encoder import build_encoder
-from tjunlp.modules.util import initial_parameter
-
-
-def seq_len_to_mask(seq_len, max_len=None):
-    """
-    将一个表示sequence length的一维数组转换为二维的mask，不包含的位置为0。
-    转变 1-d seq_len到2-d mask.
-    .. code-block::
-
-        >>> seq_len = torch.arange(2, 16)
-        >>> mask = seq_len_to_mask(seq_len)
-        >>> print(mask.size())
-        torch.Size([14, 15])
-        >>> seq_len = np.arange(2, 16)
-        >>> mask = seq_len_to_mask(seq_len)
-        >>> print(mask.shape)
-        (14, 15)
-        >>> seq_len = torch.arange(2, 16)
-        >>> mask = seq_len_to_mask(seq_len, max_len=100)
-        >>>print(mask.size())
-        torch.Size([14, 100])
-    :param np.ndarray,torch.LongTensor seq_len: shape将是(B,)
-    :param int max_len: 将长度pad到这个长度。默认(None)使用的是seq_len中最长的长度。但在nn.DataParallel的场景下可能不同卡的seq_len会有
-        区别，所以需要传入一个max_len使得mask的长度是pad到该长度。
-    :return: np.ndarray, torch.Tensor 。shape将是(B, max_length)， 元素类似为bool或torch.uint8
-    """
-    if isinstance(seq_len, np.ndarray):
-        assert len(np.shape(
-            seq_len)) == 1, f"seq_len can only have one dimension, got {len(np.shape(seq_len))}."
-        max_len = int(max_len) if max_len else int(max(seq_len))
-        broad_cast_seq_len = np.tile(np.arange(max_len), (len(seq_len), 1))
-        mask = broad_cast_seq_len < seq_len.reshape(-1, 1)
-        mask = torch.from_numpy(mask)
-
-    elif isinstance(seq_len, torch.Tensor):
-        assert seq_len.dim(
-        ) == 1, f"seq_len can only have one dimension, got {seq_len.dim() == 1}."
-        batch_size = seq_len.size(0)
-        max_len = int(max_len) if max_len else seq_len.max().long()
-        broad_cast_seq_len = torch.arange(
-            max_len).expand(batch_size, -1).to(seq_len)
-        mask = broad_cast_seq_len.lt(seq_len.unsqueeze(1))
-    elif isinstance(seq_len, List):
-        return seq_len_to_mask(np.array(seq_len), max_len)
-    else:
-        raise TypeError("Only support 1-d numpy.ndarray or 1-d torch.Tensor.")
-    return mask
+from ..core.model import Model
+from ..modules.embedding import build_word_embedding, DeepEmbedding
+from ..modules.dropout import TimestepDropout
+from ..modules.encoder import build_encoder
+from ..modules.util import initial_parameter
 
 
 def _mst(scores):
@@ -134,9 +88,9 @@ def _find_cycle(vertices, edges):
     _indices = {}
     _lowlinks = {}
     _onstack = defaultdict(lambda: False)
-    _SCCs = []
+    _SCCs = []  # pylint:disable=invalid-name
 
-    def _strongconnect(v):
+    def _strongconnect(v):  # pylint:disable=invalid-name
         nonlocal _index
         _indices[v] = _index
         _lowlinks[v] = _index
@@ -144,7 +98,7 @@ def _find_cycle(vertices, edges):
         _stack.append(v)
         _onstack[v] = True
 
-        for w in edges[v]:
+        for w in edges[v]:  # pylint:disable=invalid-name
             if w not in _indices:
                 _strongconnect(w)
                 _lowlinks[v] = min(_lowlinks[v], _lowlinks[w])
@@ -152,18 +106,18 @@ def _find_cycle(vertices, edges):
                 _lowlinks[v] = min(_lowlinks[v], _indices[w])
 
         if _lowlinks[v] == _indices[v]:
-            SCC = set()
+            SCC = set()  # pylint:disable=invalid-name
             while True:
-                w = _stack.pop()
+                w = _stack.pop()  # pylint:disable=invalid-name
                 _onstack[w] = False
                 SCC.add(w)
-                if not (w != v):
+                if not w != v:
                     break
             _SCCs.append(SCC)
 
-    for v in vertices:
-        if v not in _indices:
-            _strongconnect(v)
+    for vertex in vertices:
+        if vertex not in _indices:
+            _strongconnect(vertex)
 
     return [SCC for SCC in _SCCs if len(SCC) > 1]
 
@@ -226,7 +180,7 @@ class ArcBiaffine(nn.Module):
         :param bias: 是否使用bias. Default: ``True``
         """
         super(ArcBiaffine, self).__init__()
-        self.U = nn.Parameter(torch.randn(
+        self.U = nn.Parameter(torch.randn(  # pylint:disable=invalid-name
             hidden_size, hidden_size), requires_grad=True)
         self.has_bias = bias
         if self.has_bias:
@@ -236,7 +190,7 @@ class ArcBiaffine(nn.Module):
             self.register_parameter("bias", None)
         initial_parameter(self)
 
-    def forward(self, head: torch.Tensor, dep: torch.Tensor) -> torch.Tensor:
+    def forward(self, head: torch.Tensor, dep: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
         """
         :param head: arc-head tensor [batch, length, hidden]
         :param dep: arc-dependent tensor [batch, length, hidden]
@@ -254,27 +208,25 @@ class LabelBilinear(nn.Module):
     Biaffine Dependency Parser 的子模块, 用于构建预测边类别的图
     """
 
-    def __init__(self, in1_features: int, in2_features: int, num_label: int, bias=True):
+    def __init__(self, in1_dim: int, in2_dim: int, num_label: int, bias: bool = True):
         """
-        :param in1_features: 输入的特征1维度
-        :param in2_features: 输入的特征2维度
+        :param in1_dim: 输入的特征1维度
+        :param in2_dim: 输入的特征2维度
         :param num_label: 边类别的个数
         :param bias: 是否使用bias. Default: ``True``
         """
         super(LabelBilinear, self).__init__()
-        self.bilinear = nn.Bilinear(
-            in1_features, in2_features, num_label, bias=bias)
-        self.lin = nn.Linear(in1_features + in2_features,
-                             num_label, bias=False)
+        self.bilinear = nn.Bilinear(in1_dim, in2_dim, num_label, bias=bias)
+        self.linear = nn.Linear(in1_dim + in2_dim, num_label, bias=False)
 
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
         """
         :param x1: [batch, seq_len, hidden] 输入特征1, 即label-head
         :param x2: [batch, seq_len, hidden] 输入特征2, 即label-dep
         :return output: [batch, seq_len, num_cls] 每个元素对应类别的概率图
         """
         output = self.bilinear(x1, x2)
-        output = output + self.lin(torch.cat([x1, x2], dim=2))
+        output = output + self.linear(torch.cat([x1, x2], dim=2))
         return output
 
 
@@ -291,67 +243,67 @@ class DependencyParser(Model, GraphParser):
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
-                 arc_size: int = 192,
-                 label_size: int = 192,
+                 arc_dim: int = 192,
+                 label_dim: int = 192,
                  droupout: float = 0,
                  use_greedy_infer: bool = False,
                  **kwargs):
         super().__init__()
         self.word_embedding = build_word_embedding(**word_embedding)
-        feat_size: int = self.word_embedding.output_dim
+        feat_dim: int = self.word_embedding.output_dim
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(num_upos, **other_embedding)
-            feat_size += self.other_embedding.output_dim
+            feat_dim += self.other_embedding.output_dim
         else:
             self.other_embedding = None
 
         if encoder is not None:
-            self.encoder = build_encoder(feat_size, **encoder)
-            feat_size = self.encoder.output_dim
+            self.encoder = build_encoder(feat_dim, **encoder)
+            feat_dim = self.encoder.output_dim
         else:
             self.encoder = None
 
         if use_mlp:
             self.mlp = nn.Sequential(
-                nn.Linear(feat_size, (arc_size + label_size) * 2),
+                nn.Linear(feat_dim, (arc_dim + label_dim) * 2),
                 nn.ReLU(inplace=True),
                 TimestepDropout(p=droupout))
         else:
             if encoder is None:
                 raise ValueError("Encoder and MLP can't be None at same time!")
             self.mlp = None
-            if feat_size != 2 * (arc_size + label_size):
+            if feat_dim != 2 * (arc_dim + label_dim):
                 raise ValueError("Wrong arc and label size!")
 
-        self.arc_biaffine = ArcBiaffine(arc_size)
-        self.label_bilinear = LabelBilinear(label_size, label_size, num_label)
+        self.arc_biaffine = ArcBiaffine(arc_dim)
+        self.label_bilinear = LabelBilinear(label_dim, label_dim, num_label)
         # for calculate metrics precisely
         self.metrics_counter = OrderedDict({'arc': 0, 'label': 0, 'sample': 0})
-        self.split_sizes = [arc_size, arc_size, label_size, label_size]
+        self.split_sizes = [arc_dim, arc_dim, label_dim, label_dim]
         self.use_greedy_infer = use_greedy_infer
 
     def forward(self,  # pylint:disable=arguments-differ
                 words: torch.Tensor,
                 upos: torch.Tensor,
                 mask: torch.Tensor,  # 有词的地方为True
-                seq_lens: torch.Tensor = None,  # bert空位也有id，普通的空位为0
                 heads: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
         feat = self.word_embedding(words)
         if self.other_embedding:
-            upos = self.other_embedding(upos, seq_lens)
+            upos = self.other_embedding(upos, **kwargs)
             feat = torch.cat([feat, upos], dim=2)
         if self.encoder is not None:
-            feat = self.encoder(feat, seq_lens)
+            feat = self.encoder(feat, **kwargs)
         if self.mlp is not None:
             feat = self.mlp(feat)
-        arc_head, arc_dep, label_head, label_dep = feat.split(
-            self.split_sizes, dim=2)
+        feat = list(feat.split(self.split_sizes, dim=2))
 
-        arc_pred = self.arc_biaffine(arc_head, arc_dep)  # [N, L, L]
+        arc_pred = self.arc_biaffine(feat[0], feat[1])  # [N, L, L]
 
         # use gold or predicted arc to predict label
+        batch_range = torch.arange(
+            heads.shape[0], dtype=torch.long, device=heads.device).unsqueeze(1)
         if self.training:
             if heads is None:  # 一般不可能
                 if self.use_greedy_infer:
@@ -359,26 +311,23 @@ class DependencyParser(Model, GraphParser):
                 else:
                     heads = self.mst_decoder(arc_pred, mask)
             head_pred = None
+            feat[2] = feat[2][batch_range, heads].contiguous()
         else:
             if self.use_greedy_infer:
                 head_pred = self.greedy_decoder(arc_pred, mask)
             else:
                 head_pred = self.mst_decoder(arc_pred, mask)
-            if self.evaluating and (heads is None):
-                heads = head_pred
+            feat[2] = feat[2][batch_range, head_pred].contiguous()  # 用预测的head评测
 
-        batch_range = torch.arange(
-            heads.shape[0], dtype=torch.long, device=heads.device).unsqueeze(1)
-        label_head = label_head[batch_range, heads].contiguous()
-        label_pred = self.label_bilinear(label_head, label_dep)  # (B,L,C)
+        label_pred = self.label_bilinear(feat[2], feat[3])  # (B,L,C)
         output = {'arc': arc_pred, 'label': label_pred, 'head': head_pred}
 
         if self.training or self.evaluating:
             deprel = deprel.gather(1, heads)  # 按照头的顺序调整
             loss = self.loss(arc_pred, label_pred, heads, deprel, mask)
             output['loss'] = loss
-            if self.evaluating:
-                label_pred = label_pred.max(dim=2)[1]
+        if self.evaluating:
+            with torch.no_grad():
                 output['metric'] = self.get_metrics(
                     head_pred, label_pred, heads, deprel, mask)
 
@@ -421,8 +370,11 @@ class DependencyParser(Model, GraphParser):
         return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
 
     @staticmethod
-    def loss(arc_pred: torch.Tensor, label_pred: torch.Tensor,
-             arc_gt: torch.Tensor, label_gt: torch.Tensor, mask: torch.Tensor):
+    def loss(arc_pred: torch.Tensor,
+             label_pred: torch.Tensor,
+             arc_gt: torch.Tensor,
+             label_gt: torch.Tensor,
+             mask: torch.Tensor) -> torch.Tensor:
         """
         计算parser的loss
         :param arc_pred: [batch_size, seq_len, seq_len] 边预测logits
@@ -433,7 +385,7 @@ class DependencyParser(Model, GraphParser):
         """
 
         batch_size, length, _ = arc_pred.shape
-        flip_mask = (mask.eq(False))
+        flip_mask = mask.eq(False)
         _arc_pred = arc_pred.clone()
         _arc_pred = _arc_pred.masked_fill(
             flip_mask.unsqueeze(1), -float('inf'))
@@ -460,166 +412,3 @@ class DependencyParser(Model, GraphParser):
             return metric['LAS'] > former['LAS']
         else:
             return False
-
-
-# class BiaffineParser(DependencyParser, GraphParser):
-#     """
-#     Biaffine Dependency Parser 实现.
-#     论文参考 `Deep Biaffine Attention for Neural Dependency Parsing (Dozat and
-#     Manning, 2016) <https://arxiv.org/abs/1611.01734>`_ .
-#     """
-
-#     def __init__(self,
-#                  criterion,
-#                  emb_matrix,
-#                  pos_vocab_size: int,
-#                  num_label: int,
-#                  pos_emb_dim: int = 50,
-#                  rnn_layers: int = 1,
-#                  rnn_hidden_size: int = 200,
-#                  arc_mlp_size: int = 100,
-#                  label_mlp_size: int = 100,
-#                  dropout: float = 0.3,
-#                  encoder='lstm',
-#                  use_greedy_infer=False):
-#         """
-#         :param emb_matrix: 单词词典, 可以是 tuple, 包括(num_embedings, embedding_dim), 即
-#             embedding的大小和每个词的维度. 也可以传入 nn.Embedding 对象,
-#             此时就以传入的对象作为embedding
-#         :param pos_vocab_size: part-of-speech 词典大小
-#         :param pos_emb_dim: part-of-speech 向量维度
-#         :param num_label: 边的类别个数
-#         :param rnn_layers: rnn encoder的层数
-#         :param rnn_hidden_size: rnn encoder 的隐状态维度
-#         :param arc_mlp_size: 边预测的MLP维度
-#         :param label_mlp_size: 类别预测的MLP维度
-#         :param dropout: dropout概率.
-#         :param encoder: encoder类别, 可选 ('lstm', 'var-lstm', 'transformer'). Default: lstm
-#         :param use_greedy_infer: 是否在inference时使用贪心算法.
-#             若 ``False`` , 使用更加精确但相对缓慢的MST算法. Default: ``False``
-#         """
-#         super().__init__(criterion)
-#         rnn_out_size = 2 * rnn_hidden_size
-#         word_hid_dim = pos_hid_dim = rnn_hidden_size
-#         self.word_embedding = nn.Embedding.from_pretrained(
-#             emb_matrix, freeze=True)
-#         word_emb_dim = self.word_embedding.embedding_dim
-#         self.pos_embedding = nn.Embedding(
-#             num_embeddings=pos_vocab_size, embedding_dim=pos_emb_dim)
-#         self.word_fc = nn.Linear(word_emb_dim, word_hid_dim)
-#         self.pos_fc = nn.Linear(pos_emb_dim, pos_hid_dim)
-#         self.word_norm = nn.LayerNorm(word_hid_dim)
-#         self.pos_norm = nn.LayerNorm(pos_hid_dim)
-#         self.encoder_name = encoder
-#         self.max_len = 512
-
-#         # self.encoder = build_backbone(encoder, rnn_layers, rnn_hidden_size,
-#         #                               rnn_out_size, dropout, max_len=self.max_len)
-
-#         if encoder == 'var-lstm':
-#             self.encoder = VarLSTM(input_size=word_hid_dim + pos_hid_dim,
-#                                    hidden_size=rnn_hidden_size,
-#                                    num_layers=rnn_layers,
-#                                    bias=True,
-#                                    batch_first=True,
-#                                    input_dropout=dropout,
-#                                    hidden_dropout=dropout,
-#                                    bidirectional=True)
-#         elif encoder == 'lstm':
-#             self.encoder = nn.LSTM(input_size=word_hid_dim + pos_hid_dim,
-#                                    hidden_size=rnn_hidden_size,
-#                                    num_layers=rnn_layers,
-#                                    bias=True,
-#                                    batch_first=True,
-#                                    dropout=dropout,
-#                                    bidirectional=True)
-#         elif encoder == 'transformer':
-#             n_head = 16
-#             d_k = d_v = int(rnn_out_size / n_head)
-#             if (d_k * n_head) != rnn_out_size:
-#                 raise ValueError(
-#                     'unsupported rnn_out_size: {} for transformer'.format(rnn_out_size))
-#             self.position_emb = nn.Embedding(num_embeddings=self.max_len,
-#                                              embedding_dim=rnn_out_size, )
-#             self.encoder = TransformerEncoder(num_layers=rnn_layers,
-#                                               model_size=rnn_out_size,
-#                                               inner_size=1024,
-#                                               key_size=d_k,
-#                                               value_size=d_v,
-#                                               num_head=n_head,
-#                                               dropout=dropout, )
-#         else:
-#             raise ValueError('unsupported encoder type: {}'.format(encoder))
-
-#         self.mlp = nn.Sequential(nn.Linear(rnn_out_size, arc_mlp_size * 2 + label_mlp_size * 2),
-#                                  nn.ELU(),
-#                                  TimestepDropout(p=dropout), )
-#         self.arc_mlp_size = arc_mlp_size
-#         self.label_mlp_size = label_mlp_size
-#         self.arc_biaffine = ArcBiaffine(arc_mlp_size, bias=True)
-#         self.label_bilinear = LabelBilinear(
-#             label_mlp_size, label_mlp_size, num_label, bias=True)
-#         self.use_greedy_infer = use_greedy_infer
-#         self.reset_parameters()
-#         self.dropout = dropout
-
-#     def reset_parameters(self):
-#         for m in self.modules():
-#             if isinstance(m, nn.Embedding):
-#                 continue
-#             elif isinstance(m, nn.LayerNorm):
-#                 nn.init.constant_(m.weight, 0.1)
-#                 nn.init.constant_(m.bias, 0)
-#             else:
-#                 for p in m.parameters():
-#                     nn.init.normal_(p, 0, 0.1)
-
-#     def forward(self, words: torch.Tensor, upos: torch.Tensor, seq_lens,
-#                 heads: torch.Tensor = None, deprel: torch.Tensor = None, **kwargs):
-#         """模型forward阶段
-#         :param words: [batch_size, seq_len] 输入word序列
-#         :param upos: [batch_size, seq_len] 输入pos序列
-#         :param seq_lens: [batch_size] 输入序列长度
-#         :param heads: [batch_size, seq_len] 输入真实标注的heads, 仅在训练阶段有效,
-#             用于训练label分类器. 若为 ``None`` , 使用预测的heads输入到label分类器
-#             Default: ``None``ß
-#         :param word_ids:
-#         :param lemma:
-#         :param deprel:
-#         :return dict: parsing
-#                 结果::
-#                     pred1: [batch_size, seq_len, seq_len] 边预测logits
-#                     pred2: [batch_size, seq_len, num_label] label预测logits
-#                     pred3: [batch_size, seq_len] heads的预测结果, 在 ``heads=None`` 时预测
-#         """
-#         # prepare embeddings
-#         length = words.shape[1]
-#         # print('forward {} {}'.format(batch_size, seq_len))
-
-#         # get sequence mask
-#         mask = seq_len_to_mask(seq_lens, max_len=length).long()
-
-#         word = self.word_embedding(words)  # [N,L] -> [N,L,C_0]
-#         pos = self.pos_embedding(upos)  # [N,L] -> [N,L,C_1]
-#         word, pos = self.word_fc(word), self.pos_fc(pos)
-#         word, pos = self.word_norm(word), self.pos_norm(pos)
-#         x = torch.cat([word, pos], dim=2)  # -> [N,L,C]
-
-#         # encoder, extract features
-#         if self.encoder_name.endswith('lstm'):
-#             # sort_lens, sort_idx = torch.sort(torch.tensor(seq_lens), dim=0, descending=True)
-#             # x = x[sort_idx]
-#             x = pack_padded_sequence(x, seq_lens, batch_first=True)
-#             feat, _ = self.encoder(x)  # -> [N,L,C]
-#             feat, _ = pad_packed_sequence(feat, batch_first=True)
-#             # _, unsort_idx = torch.sort(sort_idx, dim=0, descending=False)
-#             # feat = feat[unsort_idx]
-#         else:
-#             seq_range = torch.arange(
-#                 length, dtype=torch.long, device=x.device)[None, :]
-#             x = x + self.position_emb(seq_range)
-#             feat = self.encoder(x, mask.float())
-
-#         # mlp, reduce dim
-#         feat = self.mlp(feat)
-#         return feat

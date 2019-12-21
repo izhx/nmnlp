@@ -21,7 +21,10 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
 class ConlluDataset(DataSet):
     index_fields = ('words', 'lemma', 'upos', 'deprel')
 
-    def __init__(self, file_path: str, tokenizer=None, lang: str = 'en',
+    def __init__(self,
+                 file_path: str,
+                 tokenizer=None,
+                 lang: str = 'en',
                  multi_lang: bool = False,
                  use_language_specific_pos: bool = False,
                  **kwargs):
@@ -30,16 +33,18 @@ class ConlluDataset(DataSet):
         self.use_language_specific_pos = use_language_specific_pos
         super().__init__(file_path, tokenizer)  # 不可调换顺序
 
-    def read(self, file_path) -> List:
+    def read(self, file_path: str) -> List:
         data = list()
         with open(file_path, "r") as conllu_file:
-            logger.info("Reading UD instances from conllu dataset at: %s", file_path)
+            logger.info(
+                "Reading UD instances from conllu dataset at: %s", file_path)
 
             for annotation in parse_incr(conllu_file):
                 # if len(annotation) < 3:
                 #     print(annotation)
                 #     continue
-                annotation = [x for x in annotation if isinstance(x["id"], int)]
+                annotation = [
+                    x for x in annotation if isinstance(x["id"], int)]
                 if annotation[0]['id'] == 0:
                     for i in range(len(annotation)):
                         annotation[i]['id'] += 1
@@ -55,7 +60,8 @@ class ConlluDataset(DataSet):
                 # if self.use_language_specific_pos:
                 #     pos_tags = [x["xpostag"] for x in annotation]
                 upos_tag = [x["upostag"] for x in annotation]
-                data.append(self.text_to_instance(ids, words, lemma, upos_tag, (deprel, heads)))
+                data.append(self.text_to_instance(
+                    ids, words, lemma, upos_tag, (deprel, heads)))
         return data
 
     @overrides
@@ -73,41 +79,35 @@ class ConlluDataset(DataSet):
         fields['lemma'] = lemma
         fields["upos"] = upos_tags
         if dependencies is not None:
-            # We don't want to expand the label namespace with an additional dummy token, so we'll
-            # always give the 'ROOT_HEAD' token a label of 'root'.
             fields["deprel"], fields["heads"] = dependencies
 
         fields["metadata"] = {"words": words, "pos": upos_tags,
-                              "lang": self.lang, 'seq_lens': len(ids)}
+                              "lang": self.lang, 'len': len(ids)}
         return fields
 
     def collate_fn(self, batch) -> Dict[str, Any]:
         result = dict()  # batch, seq
+        used_keys = ('words', 'upos', 'deprel', 'heads')
 
         ids_sorted = sorted(range(len(batch)),
-                            key=lambda x: batch[x]['metadata']['seq_lens'],
+                            key=lambda x: batch[x]['metadata']['len'],
                             reverse=True)
 
-        max_len = batch[ids_sorted[0]]['metadata']['seq_lens']
+        max_len = batch[ids_sorted[0]]['metadata']['len']
 
         for i, o in zip(range(len(batch)), ids_sorted):
-            seq_lens = len(batch[o]['words'])
-            result.setdefault('seq_lens', list()).append(seq_lens)
-            for key in ('word_ids', 'words', 'lemma', 'upos', 'deprel', 'heads'):
-                result.setdefault(key, torch.zeros((len(batch), max_len), dtype=torch.int64))[i,
-                :seq_lens] = torch.tensor(batch[o][key], dtype=torch.int64)
+            seq_len = len(batch[o]['words'])
+            result.setdefault('seq_lens', list()).append(seq_len)
+            for key in used_keys:
+                result.setdefault(key, torch.zeros((len(
+                    batch), max_len), dtype=torch.int64))[i, :seq_len] = torch.LongTensor(
+                        batch[o][key])
 
-            heads = torch.tensor(batch[o]['heads'], dtype=torch.int64)
-            if torch.any(heads < 0) or torch.any(heads >= seq_lens):
+            heads = torch.LongTensor(batch[o]['heads'])
+            if torch.any(heads < 0) or torch.any(heads >= seq_len):
                 raise Exception("?????????")
 
-            result.setdefault('pretrained', torch.zeros((len(batch), max_len), dtype=torch.int64))[
-            i, :seq_lens] = torch.tensor(batch[o]['words'], dtype=torch.int64)
-
-        result['mask'] = torch.eq(result['words'], DEFAULT_PADDING_INDEX).eq(False)
-
-        for key in ('word_ids', 'words', 'lemma', 'upos', 'deprel', 'heads'):
-            if torch.any(result[key] < 0):
-                raise Exception("?????????")
+        result['mask'] = torch.eq(
+            result['words'], DEFAULT_PADDING_INDEX).eq(False)
 
         return result
