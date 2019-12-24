@@ -24,7 +24,7 @@ class LstmEncoder(torch.nn.Module):
                                      bias, batch_first, dropout, bidirectional)
         self.output_dim = hidden_size * 2 if bidirectional else hidden_size
 
-    def forward(self, inputs, seq_lens=None, hx=None):  # pylint:disable=arguments-differ
+    def forward(self, inputs, seq_lens=None, hx=None, **kwargs):  # pylint:disable=arguments-differ
         inputs = pack_padded_sequence(inputs, seq_lens, batch_first=True)
         feat, _ = self.encoder(inputs, hx=hx)  # -> [N,L,C]
         feat, _ = pad_packed_sequence(feat, batch_first=True)

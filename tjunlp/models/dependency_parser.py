@@ -182,25 +182,23 @@ class ArcBiaffine(nn.Module):
         super(ArcBiaffine, self).__init__()
         self.U = nn.Parameter(torch.randn(  # pylint:disable=invalid-name
             hidden_size, hidden_size), requires_grad=True)
-        self.has_bias = bias
-        if self.has_bias:
-            self.bias = nn.Parameter(torch.randn(
-                hidden_size), requires_grad=True)
-        else:
-            self.register_parameter("bias", None)
+        self.bias = nn.Parameter(torch.randn(
+            hidden_size), requires_grad=True) if bias else None
         initial_parameter(self)
 
-    def forward(self, head: torch.Tensor, dep: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
         """
-        :param head: arc-head tensor [batch, length, hidden]
-        :param dep: arc-dependent tensor [batch, length, hidden]
-        :return output: tensor [bacth, length, length]
+        :param x1: arc-head tensor [batch, length, hidden]
+        :param x2: arc-dependent tensor [batch, length, hidden]
+        :return : tensor [bacth, length, length]
         """
-        output = dep.matmul(self.U)
-        output = output.bmm(head.transpose(-1, -2))
-        if self.has_bias:
-            output = output + head.matmul(self.bias).unsqueeze(1)
-        return output
+        # (b, s, h) = (b, s, h) * (h, h)
+        x2 = x2.matmul(self.U)
+        # (b, s, s) = (b, s, h) * (b, h, s)
+        x2 = x2.bmm(x1.transpose(-1, -2))
+        if self.bias is not None:
+            x2 += x1.matmul(self.bias).unsqueeze(1)
+        return x2
 
 
 class LabelBilinear(nn.Module):
@@ -226,7 +224,7 @@ class LabelBilinear(nn.Module):
         :return output: [batch, seq_len, num_cls] 每个元素对应类别的概率图
         """
         output = self.bilinear(x1, x2)
-        output = output + self.linear(torch.cat([x1, x2], dim=2))
+        output += self.linear(torch.cat([x1, x2], dim=2))
         return output
 
 
@@ -299,12 +297,18 @@ class DependencyParser(Model, GraphParser):
                 heads: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
-        feat = self.word_embedding(words)
+        def remove_sep(tensors: List[torch.Tensor]):
+            for i in range(len(tensors)):
+                tensors[i] = tensors[i][:, :-1]
+            return tensors
+        feat = self.word_embedding(words, **kwargs)
         if self.other_embedding:
             upos = self.other_embedding(upos, **kwargs)
             feat = torch.cat([feat, upos], dim=2)
         if self.encoder is not None:
-            feat = self.encoder(feat, **kwargs)
+            feat = self.encoder(feat, **kwargs)  # unpack会去掉[SEP]那一列
+            if feat.shape[1] == words.shape[1] - 1:
+                mask, heads, deprel = remove_sep([mask, heads, deprel])
         if self.mlp is not None:
             feat = self.mlp(feat)
         feat = list(feat.split(self.split_sizes, dim=2))

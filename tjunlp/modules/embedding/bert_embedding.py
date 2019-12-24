@@ -1,11 +1,15 @@
 """
 Pack bert.
 """
+from typing import List
 import torch
 from transformers import BertModel
 
 BERT_BASE_UNCASED = '/home/xps/Desktop/workspace/model_weight/bert-base-uncased/'
 BERT_MULTILINGUAL = '/home/xps/Desktop/workspace/model_weight/bert-multilingual/'
+
+CLS = 101
+SEP = 102
 
 
 class PackedBertEmbedding(torch.nn.Module):
@@ -30,8 +34,12 @@ class PackedBertEmbedding(torch.nn.Module):
         self.output_dim = bert.config.hidden_size
 
     def forward(self, input_ids: torch.Tensor,  # pylint:disable=arguments-differ
+                seq_lens: List[int],
                 head_mask: torch.Tensor = None,
-                attention_mask: torch.Tensor = None) -> torch.Tensor:
+                attention_mask: torch.Tensor = None,
+                **kwargs) -> torch.Tensor:
+        for i, s in enumerate(seq_lens):
+            input_ids[i, 0], input_ids[i, s] = CLS, SEP
         if head_mask is None:
             head_mask = [None] * self.num_hidden_layers
         if attention_mask is not None:
