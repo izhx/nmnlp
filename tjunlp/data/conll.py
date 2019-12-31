@@ -93,7 +93,7 @@ class ConlluDataset(DataSet):
                             key=lambda x: batch[x]['metadata']['len'],
                             reverse=True)
 
-        max_len = batch[ids_sorted[0]]['metadata']['len']
+        max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
 
         for i, o in zip(range(len(batch)), ids_sorted):
             seq_len = len(batch[o]['words'])
@@ -102,6 +102,7 @@ class ConlluDataset(DataSet):
                 result.setdefault(key, torch.zeros((len(
                     batch), max_len), dtype=torch.int64))[i, :seq_len] = torch.LongTensor(
                         batch[o][key])
+            result.setdefault('sent', list()).append(batch[o]['metadata']['words'])
 
             heads = torch.LongTensor(batch[o]['heads'])
             if torch.any(heads < 0) or torch.any(heads >= seq_len):

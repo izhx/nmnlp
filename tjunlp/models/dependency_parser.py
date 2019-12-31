@@ -5,11 +5,13 @@
 from typing import Dict, List, Any
 from collections import defaultdict, OrderedDict
 from overrides import overrides
+import math
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
 
 
 from ..core.model import Model
@@ -168,64 +170,76 @@ class GraphParser(object):
             ans *= mask.long()
         return ans
 
+    @staticmethod
+    def decode(graph, mask, greedy: bool = False):
+        if greedy:
+            graph = GraphParser.greedy_decoder(graph, mask)
+        else:
+            graph = GraphParser.mst_decoder(graph, mask)
+        return graph
 
-class ArcBiaffine(nn.Module):
+
+class GELU(nn.Module):
     """
-    Biaffine Dependency Parser 的子模块, 用于构建预测边的图
-    """
-
-    def __init__(self, hidden_size: int, bias: bool = True):
-        """
-        :param hidden_size: 输入的特征维度
-        :param bias: 是否使用bias. Default: ``True``
-        """
-        super(ArcBiaffine, self).__init__()
-        self.U = nn.Parameter(torch.randn(  # pylint:disable=invalid-name
-            hidden_size, hidden_size), requires_grad=True)
-        self.bias = nn.Parameter(torch.randn(
-            hidden_size), requires_grad=True) if bias else None
-        initial_parameter(self)
-
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
-        """
-        :param x1: arc-head tensor [batch, length, hidden]
-        :param x2: arc-dependent tensor [batch, length, hidden]
-        :return : tensor [bacth, length, length]
-        """
-        # (b, s, h) = (b, s, h) * (h, h)
-        x2 = x2.matmul(self.U)
-        # (b, s, s) = (b, s, h) * (b, h, s)
-        x2 = x2.bmm(x1.transpose(-1, -2))
-        if self.bias is not None:
-            x2 += x1.matmul(self.bias).unsqueeze(1)
-        return x2
-
-
-class LabelBilinear(nn.Module):
-    """
-    Biaffine Dependency Parser 的子模块, 用于构建预测边类别的图
+    Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
     """
 
-    def __init__(self, in1_dim: int, in2_dim: int, num_label: int, bias: bool = True):
-        """
-        :param in1_dim: 输入的特征1维度
-        :param in2_dim: 输入的特征2维度
-        :param num_label: 边类别的个数
-        :param bias: 是否使用bias. Default: ``True``
-        """
-        super(LabelBilinear, self).__init__()
-        self.bilinear = nn.Bilinear(in1_dim, in2_dim, num_label, bias=bias)
-        self.linear = nn.Linear(in1_dim + in2_dim, num_label, bias=False)
+    def forward(self, x):
+        return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
 
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
-        """
-        :param x1: [batch, seq_len, hidden] 输入特征1, 即label-head
-        :param x2: [batch, seq_len, hidden] 输入特征2, 即label-dep
-        :return output: [batch, seq_len, num_cls] 每个元素对应类别的概率图
-        """
-        output = self.bilinear(x1, x2)
-        output += self.linear(torch.cat([x1, x2], dim=2))
-        return output
+
+class NonLinear(nn.Module):
+    """
+    a
+    """
+
+    def __init__(self, input_size, hidden_size, activation=None):
+        super().__init__()
+        self.linear = nn.Linear(in_features=input_size,
+                                out_features=hidden_size)
+        init.orthogonal_(self.linear.weight.data)
+        init.zeros_(self.linear.bias.data)
+        if activation is None:
+            self._activate = lambda x: x
+        else:
+            if not callable(activation):
+                raise ValueError(
+                    f"activation must be callable: type={type(activation)}")
+            self._activate = activation
+
+    def forward(self, x):  # pylint:disable=arguments-differ
+        x = self.linear(x)
+        return self._activate(x)
+
+
+class Bilinear(nn.Module):
+    """
+    A bilinear module.
+    Input: tensors of sizes (b x n1 x d1) and (b x n2 x d2)
+    Output: tensor of size (b x n1 x n2 x O)
+    """
+
+    def __init__(self, in1_features, in2_features, out_features, bias=True):
+        super().__init__()
+        self.weight = nn.Parameter(torch.zeros(
+            in1_features, in2_features * out_features))
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.out_features = out_features
+
+    def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
+        b, n1, _, _, n2, d2, o = * \
+            list(input1.shape), *list(input2.shape), self.out_features
+        # (b, n1, d1) * (d1, o*d2) -> (b, n1, o*d2) -> (b, n1*o, d2)
+        lin = input1.matmul(self.weight).reshape(b, n1*o, d2)
+        # (b, n1*o, d2) * (b, d2, n2) -> (b, n1*o, n2)
+        output = lin.bmm(input2.transpose(1, 2))
+        # (b, n1*O, n2) -> (b, n1, n2, O)
+        output = output.view(b, n1, o, n2).transpose(2, 3)
+
+        return output  # einsum will cause cuda out of memory, fuck
 
 
 class DependencyParser(Model, GraphParser):
@@ -235,29 +249,28 @@ class DependencyParser(Model, GraphParser):
 
     def __init__(self,
                  criterion,
-                 num_label: int,
+                 num_rel: int,
                  num_upos: int,
                  word_embedding: Dict[str, Any],
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
-                 transform_dim: int = 100,
+                 transform_dim: int = 200,
                  arc_dim: int = 250,
                  label_dim: int = 50,
                  dropout: float = 0,
                  use_greedy_infer: bool = False,
                  **kwargs):
-        super().__init__()
+        super().__init__(criterion)
+        self.word_embedding = build_word_embedding(**word_embedding)
         if transform_dim > 0:
-            word_embedding = build_word_embedding(**word_embedding)
-            self.word_embedding = nn.Sequential(
-                word_embedding,
-                nn.Linear(word_embedding.output_dim, transform_dim)
-            )
+            self.word_mlp = NonLinear(self.word_embedding.output_dim,
+                                      transform_dim, activation=GELU())
             feat_dim: int = transform_dim
         else:
-            self.word_embedding = build_word_embedding(**word_embedding)
             feat_dim: int = self.word_embedding.output_dim
+            self.word_mlp = None
+
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(num_upos, **other_embedding)
             feat_dim += self.other_embedding.output_dim
@@ -267,28 +280,27 @@ class DependencyParser(Model, GraphParser):
         if encoder is not None:
             self.encoder = build_encoder(feat_dim, dropout=dropout, **encoder)
             feat_dim = self.encoder.output_dim
+            initial_parameter(self.encoder, initial_method='orthogonal')
         else:
             self.encoder = None
-
+        self.use_mlp = use_mlp
         if use_mlp:
-            self.mlp = nn.Sequential(
-                nn.Linear(feat_dim, (arc_dim + label_dim) * 2),
-                nn.ReLU(inplace=True),
-                TimestepDropout(p=dropout)
-            )
+            self.arc_mlp = NonLinear(
+                feat_dim, arc_dim+label_dim, nn.LeakyReLU(0.1))
+            self.rel_mlp = NonLinear(
+                feat_dim, arc_dim+label_dim, nn.LeakyReLU(0.1))
         else:
             if encoder is None:
                 raise ValueError("Encoder and MLP can't be None at same time!")
-            self.mlp = None
             if feat_dim != 2 * (arc_dim + label_dim):
                 raise ValueError("Wrong arc and label size!")
 
-        self.arc_biaffine = ArcBiaffine(arc_dim)
-        self.label_bilinear = LabelBilinear(label_dim, label_dim, num_label)
-        # for calculate metrics precisely
-        self.metrics_counter = OrderedDict({'arc': 0, 'label': 0, 'sample': 0})
-        self.split_sizes = [arc_dim, arc_dim, label_dim, label_dim]
+        self.arc_classifier = Bilinear(arc_dim, arc_dim, 1)
+        self.rel_classifier = Bilinear(label_dim, label_dim, num_rel)
+        self.split_sizes = [arc_dim, label_dim]
         self.use_greedy_infer = use_greedy_infer
+        # for calculate metrics precisely
+        self.metrics_counter = OrderedDict({'arc': 0, 'rel': 0, 'sample': 0})
 
     def forward(self,  # pylint:disable=arguments-differ
                 words: torch.Tensor,
@@ -302,57 +314,54 @@ class DependencyParser(Model, GraphParser):
                 tensors[i] = tensors[i][:, :-1]
             return tensors
         feat = self.word_embedding(words, **kwargs)
-        if self.other_embedding:
+        if self.word_mlp is not None:
+            feat = self.word_mlp(feat)
+
+        if self.other_embedding is not None:
             upos = self.other_embedding(upos, **kwargs)
             feat = torch.cat([feat, upos], dim=2)
         if self.encoder is not None:
             feat = self.encoder(feat, **kwargs)  # unpack会去掉[SEP]那一列
             if feat.shape[1] == words.shape[1] - 1:
                 mask, heads, deprel = remove_sep([mask, heads, deprel])
-        if self.mlp is not None:
-            feat = self.mlp(feat)
-        feat = list(feat.split(self.split_sizes, dim=2))
+        if self.use_mlp:
+            feat = (self.arc_mlp(feat), self.rel_mlp(feat))
+            feat = list(feat[0].split(self.split_sizes, dim=2)) + \
+                list(feat[1].split(self.split_sizes, dim=2))
+        else:
+            feat = list(feat.split(self.split_sizes*2, dim=2))
 
-        arc_pred = self.arc_biaffine(feat[0], feat[1])  # [N, L, L]
+        arc_pred = self.arc_classifier(feat[0], feat[2]).squeeze(-1)  # (b,s,s)
 
         # use gold or predicted arc to predict label
-        batch_range = torch.arange(
-            heads.shape[0], dtype=torch.long, device=heads.device).unsqueeze(1)
         if self.training:
             if heads is None:  # 一般不可能
-                if self.use_greedy_infer:
-                    heads = self.greedy_decoder(arc_pred, mask)
-                else:
-                    heads = self.mst_decoder(arc_pred, mask)
-            head_pred = None
-            feat[2] = feat[2][batch_range, heads].contiguous()
+                heads = self.decode(arc_pred, mask, self.use_greedy_infer)
+            head_pred = heads
         else:
-            if self.use_greedy_infer:
-                head_pred = self.greedy_decoder(arc_pred, mask)
-            else:
-                head_pred = self.mst_decoder(arc_pred, mask)
-            feat[2] = feat[2][batch_range, head_pred].contiguous()  # 用预测的head评测
+            head_pred = self.decode(arc_pred, mask, self.use_greedy_infer)
 
-        label_pred = self.label_bilinear(feat[2], feat[3])  # (B,L,C)
-        output = {'arc': arc_pred, 'label': label_pred, 'head': head_pred}
+        rel_pred = self.rel_classifier(feat[1], feat[3])  # (b,s,s,c)
+        rel_pred = torch.gather(rel_pred, 2, heads.unsqueeze(
+            2).unsqueeze(3).expand(-1, -1, -1, rel_pred.shape[-1])).squeeze(2)
+        output = dict()
 
         if self.training or self.evaluating:
-            deprel = deprel.gather(1, heads)  # 按照头的顺序调整
-            loss = self.loss(arc_pred, label_pred, heads, deprel, mask)
+            loss = self.loss(arc_pred, rel_pred, heads, deprel, mask)
             output['loss'] = loss
         if self.evaluating:
             with torch.no_grad():
                 output['metric'] = self.get_metrics(
-                    head_pred, label_pred, heads, deprel, mask)
+                    head_pred, rel_pred, heads, deprel, mask)
 
         return output
 
     @overrides
     def get_metrics(self,  # pylint:disable=arguments-differ
                     head_pred: torch.Tensor = None,
-                    label_pred: torch.Tensor = None,
+                    rel_pred: torch.Tensor = None,
                     head_gt: torch.Tensor = None,
-                    label_gt: torch.Tensor = None,
+                    rel_gt: torch.Tensor = None,
                     mask: torch.Tensor = None,
                     reset: bool = False) -> Dict[str, float]:
         """
@@ -360,63 +369,48 @@ class DependencyParser(Model, GraphParser):
         reset = False， 计数，返回单次结果， True 用计数计算并清空
         """
         if reset:
-            arc, label, sample = self.metrics_counter.values()
+            arc, rel, sample = self.metrics_counter.values()
             for k in self.metrics_counter:
                 self.metrics_counter[k] = 0
-            return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
+            return {'UAS': arc * 1.0 / sample, 'LAS': rel * 1.0 / sample}
 
-        if len(label_pred.shape) > len(label_gt.shape):
+        if len(rel_pred.shape) > len(rel_gt.shape):
             pred_dim, indices_dim = 2, 1
-            label_pred = label_pred.max(pred_dim)[indices_dim]
+            rel_pred = rel_pred.max(pred_dim)[indices_dim]
+
         mask = mask.long()
-        # mask out <root> tag
-        mask[:, 0] = 0
+        mask[:, 0] = 0  # mask out <root> tag
         head_pred_correct = (head_pred == head_gt).long() * mask
-        label_pred_correct = (
-            label_pred == label_gt).long() * head_pred_correct
+        rel_pred_correct = (
+            rel_pred == rel_gt).long() * head_pred_correct
         arc = head_pred_correct.sum().item()
-        label = label_pred_correct.sum().item()
+        rel = rel_pred_correct.sum().item()
         sample = mask.sum().item()
         self.metrics_counter['arc'] += arc
-        self.metrics_counter['label'] += label
+        self.metrics_counter['rel'] += rel
         self.metrics_counter['sample'] += sample
 
-        return {'UAS': arc * 1.0 / sample, 'LAS': label * 1.0 / sample}
+        return {'UAS': arc * 1.0 / sample, 'LAS': rel * 1.0 / sample}
 
-    @staticmethod
-    def loss(arc_pred: torch.Tensor,
-             label_pred: torch.Tensor,
+    def loss(self, arc_logits: torch.Tensor,
+             rel_logits: torch.Tensor,
              arc_gt: torch.Tensor,
-             label_gt: torch.Tensor,
+             rel_gt: torch.Tensor,
              mask: torch.Tensor) -> torch.Tensor:
-        """
-        计算parser的loss
-        :param arc_pred: [batch_size, seq_len, seq_len] 边预测logits
-        :param label_pred: [batch_size, seq_len, num_label] label预测logits
-        :param arc_gt: [batch_size, seq_len] 真实边的标注
-        :param label_gt: [batch_size, seq_len] 真实类别的标注
-        :return loss: scalar
-        """
-
-        batch_size, length, _ = arc_pred.shape
+        b, s, n = rel_logits.shape
         flip_mask = mask.eq(False)
-        _arc_pred = arc_pred.clone()
-        _arc_pred = _arc_pred.masked_fill(
-            flip_mask.unsqueeze(1), -float('inf'))
-        arc_logits = F.log_softmax(_arc_pred, dim=2)
-        label_logits = F.log_softmax(label_pred, dim=2)
-        batch_index = torch.arange(
-            batch_size, device=arc_logits.device, dtype=torch.long).unsqueeze(1)
-        child_index = torch.arange(
-            length, device=arc_logits.device, dtype=torch.long).unsqueeze(0)
-        arc_loss = arc_logits[batch_index, child_index, arc_gt]
-        label_loss = label_logits[batch_index, child_index, label_gt]
+        flip_mask[:, 0] = True
+        arc_logits = arc_logits.masked_fill(
+            flip_mask.unsqueeze(-1).expand(arc_logits.shape), -float('inf'))
+        arc_gt = arc_gt.masked_fill(flip_mask, -1)
+        arc_loss = F.cross_entropy(
+            arc_logits.view(-1, s), arc_gt.reshape(-1), ignore_index=-1)
 
-        arc_loss = arc_loss.masked_fill(flip_mask, 0)
-        label_loss = label_loss.masked_fill(flip_mask, 0)
-        arc_nll = -arc_loss.mean()
-        label_nll = -label_loss.mean()
-        return arc_nll + label_nll
+        rel_gt = rel_gt.masked_fill(flip_mask, -1)
+        rel_loss = F.cross_entropy(
+            rel_logits.view(-1, n), rel_gt.reshape(-1), ignore_index=-1)
+
+        return arc_loss + rel_loss
 
     @staticmethod
     def is_best(metric: Dict[str, float], former: Dict[str, float]) -> bool:
