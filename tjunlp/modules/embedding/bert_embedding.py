@@ -17,7 +17,7 @@ class PackedBertEmbedding(torch.nn.Module):
     Packed Bert, remove unnecessary code.
     """
 
-    def __init__(self, name, freeze):
+    def __init__(self, name, freeze, output_hidden_states: bool = False):
         super().__init__()
         if name == 'bert_multi':
             bert = BertModel.from_pretrained(BERT_MULTILINGUAL)
@@ -30,8 +30,10 @@ class PackedBertEmbedding(torch.nn.Module):
 
         self.embeddings = bert.embeddings
         self.encoder = bert.encoder
+        self.config = bert.config
         self.num_hidden_layers = bert.config.num_hidden_layers
         self.output_dim = bert.config.hidden_size
+        self.encoder.output_hidden_states = output_hidden_states
 
     def forward(self, input_ids: torch.Tensor,  # pylint:disable=arguments-differ
                 seq_lens: List[int],
@@ -61,4 +63,6 @@ class PackedBertEmbedding(torch.nn.Module):
 
         outputs = self.embeddings(input_ids=input_ids)
         outputs = self.encoder(outputs, extended_attention_mask, head_mask)
-        return outputs[0]
+        if self.encoder.output_hidden_states:
+            return outputs[1]  # all layer hidden states
+        return outputs[0]  # last layer outputs
