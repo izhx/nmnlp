@@ -400,11 +400,10 @@ class DependencyParser(Model, GraphParser):
                 words: torch.Tensor,
                 upos: torch.Tensor,
                 mask: torch.Tensor,  # 有词的地方为True
-                word_ids: torch.Tensor = None,
                 heads: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
-        feat = self.word_embedding(words, position_ids=word_ids, **kwargs)
+        feat = self.word_embedding(words, **kwargs)
         if isinstance(self.word_mlp, nn.ModuleList):
             feat = [self.word_mlp[i](feat[i]) for i, f in enumerate(feat)]
         elif isinstance(self.word_mlp, NonLinear):
