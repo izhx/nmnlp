@@ -341,10 +341,10 @@ class DependencyParser(Model, GraphParser):
         super().__init__(criterion)
         self.word_embedding = build_word_embedding(**word_embedding)
         if transform_dim > 0:
-            if 'output_hidden_states' in word_embedding and word_embedding['output_hidden_states']:
+            if 'layer_num' in word_embedding and word_embedding['layer_num'] > 1:
                 self.word_mlp = nn.ModuleList([NonLinear(
                     self.word_embedding.output_dim, transform_dim, activation=GELU(
-                    )) for _ in range(kwargs['bert_layer'])])
+                    )) for _ in range(word_embedding['layer_num'])])
             else:
                 self.word_mlp = NonLinear(self.word_embedding.output_dim,
                                           transform_dim, activation=GELU())
@@ -353,18 +353,12 @@ class DependencyParser(Model, GraphParser):
             feat_dim: int = self.word_embedding.output_dim
             self.word_mlp = None
 
-        if 'bert_fusion' in kwargs:
-            if kwargs['bert_fusion'] == 'cat':
-                if transform_dim > 0:
-                    self.fusion = lambda x: torch.cat(x, -1)
-                else:
-                    self.fusion = lambda x: torch.cat(
-                        list(reversed(x))[:kwargs['bert_layer']], -1)
-                feat_dim *= kwargs['bert_layer']
+        if 'feature_fusion' in kwargs:  # 多层融合方式
+            if kwargs['feature_fusion'] == 'cat':
+                self.fusion = lambda x: torch.cat(x, -1)
+                feat_dim *= word_embedding['layer_num']
             else:
-                self.rescale = ScalarMix(kwargs['bert_layer'])
-                self.fusion = lambda x: self.rescale(
-                    list(reversed(x))[:kwargs['bert_layer']])
+                self.fusion = ScalarMix(word_embedding['layer_num'])
         else:
             self.fusion = None
 
@@ -406,12 +400,12 @@ class DependencyParser(Model, GraphParser):
                 words: torch.Tensor,
                 upos: torch.Tensor,
                 mask: torch.Tensor,  # 有词的地方为True
+                word_ids: torch.Tensor = None,
                 heads: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
-        feat = self.word_embedding(words, **kwargs)
+        feat = self.word_embedding(words, position_ids=word_ids, **kwargs)
         if isinstance(self.word_mlp, nn.ModuleList):
-            feat = list(reversed(feat))[:len(self.word_mlp)]
             feat = [self.word_mlp[i](feat[i]) for i, f in enumerate(feat)]
         elif isinstance(self.word_mlp, NonLinear):
             feat = self.word_mlp(feat)

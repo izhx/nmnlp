@@ -1,13 +1,12 @@
 from typing import Any, List, Dict, Tuple
 import os
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from overrides import overrides
 
 import torch
 from conllu import parse_incr
 
-from tjunlp.core.vocabulary import DEFAULT_PADDING_INDEX
 from tjunlp.core.dataset import DataSet
 
 logger = logging.getLogger(__name__)
@@ -69,15 +68,22 @@ class ConlluDataset(DataSet):
                          upos_tags: List[str], dependencies: Tuple = None):
         fields: Dict[str, object] = {}
 
+        word_pieces = dict()
         if self.tokenizer is not None:
-            tokens = self.tokenizer.tokenize(" ".join(words))
+            tokens = ['<root>']
+            for i, word in enumerate(words[1:], 1):
+                _tokens = self.tokenizer.tokenize(word)
+                tokens.append(_tokens[0])
+                if len(_tokens) > 1:
+                    word_pieces[i] = [self.tokenizer.vocab[p] for p in _tokens]
         else:
-            tokens = [t.lower() for t in words]
+            tokens = [word.lower() for word in words]
 
         fields['word_ids'] = ids
         fields["words"] = tokens
         fields['lemma'] = lemma
         fields["upos"] = upos_tags
+        fields['word_pieces'] = word_pieces
         if dependencies is not None:
             fields["deprel"], fields["heads"] = dependencies
 
@@ -86,29 +92,27 @@ class ConlluDataset(DataSet):
         return fields
 
     def collate_fn(self, batch) -> Dict[str, Any]:
-        result = dict()  # batch, seq
-        used_keys = ('words', 'upos', 'deprel', 'heads')
+        used_keys = ('words', 'upos', 'deprel', 'heads', 'word_ids')
 
         ids_sorted = sorted(range(len(batch)),
                             key=lambda x: batch[x]['metadata']['len'],
                             reverse=True)
 
         max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
+        result = defaultdict(lambda: torch.zeros(
+            len(batch), max_len, dtype=torch.long))
+        result['mask'] = torch.zeros((len(batch), max_len)).bool()
+        result['seq_lens'], result['sentences'] = list(), list()
+        result['word_pieces'] = dict()
 
         for i, o in zip(range(len(batch)), ids_sorted):
             seq_len = len(batch[o]['words'])
-            result.setdefault('seq_lens', list()).append(seq_len)
+            result['seq_lens'].append(seq_len)
+            result['sentences'].append(batch[o]['metadata']['words'])
+            result['mask'][i, 1:seq_len] = True
             for key in used_keys:
-                result.setdefault(key, torch.zeros((len(
-                    batch), max_len), dtype=torch.int64))[i, :seq_len] = torch.LongTensor(
-                        batch[o][key])
-            result.setdefault('sent', list()).append(batch[o]['metadata']['words'])
-
-            heads = torch.LongTensor(batch[o]['heads'])
-            if torch.any(heads < 0) or torch.any(heads >= seq_len):
-                raise Exception("?????????")
-
-        result['mask'] = torch.eq(
-            result['words'], DEFAULT_PADDING_INDEX).eq(False)
+                result[key][i, :seq_len] = torch.LongTensor(batch[o][key])
+            for w, piece in batch[o]['word_pieces'].items():
+                result['word_pieces'][(i, w)] = torch.LongTensor(piece)
 
         return result
