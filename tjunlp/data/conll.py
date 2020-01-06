@@ -1,12 +1,16 @@
 from typing import Any, List, Dict, Tuple
 import os
+import glob
+import random
 import logging
 from collections import OrderedDict, defaultdict
 from overrides import overrides
+from functools import reduce
 
 import torch
 from conllu import parse_incr
 
+from tjunlp.common.tqdm import Tqdm
 from tjunlp.core.dataset import DataSet
 
 logger = logging.getLogger(__name__)
@@ -17,85 +21,114 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
                      ('misc', None)])
 
 
+rec = list()
+
+
 class ConlluDataset(DataSet):
-    index_fields = ('words', 'lemma', 'upos', 'deprel')
+    """
+    ud v2.2 的 ja_bccjwj, Arabic-NYUAD 没有词，删掉
+               Marathi_UFAL 的dev，有许多词没有form只有lemma
+    """
+    ud_keys = ('id', 'form', 'upostag', 'head', 'deprel')  # 暂时不用 'lemma'
+    index_fields = ('words', 'upostag', 'deprel')
+    max_len = 128
 
     def __init__(self,
-                 file_path: str,
-                 tokenizer=None,
-                 lang: str = 'en',
-                 multi_lang: bool = False,
-                 use_language_specific_pos: bool = False,
-                 **kwargs):
+                 data_dir: str,
+                 kind: str = 'train',
+                 tokenizer: Any = None,
+                 lang: str = '',
+                 min_len: int = 2,
+                 use_language_specific_pos: bool = False):
         self.lang = lang
-        self.multi_lang = multi_lang
+        self.min_len = min_len
         self.use_language_specific_pos = use_language_specific_pos
-        super().__init__(file_path, tokenizer)  # 不可调换顺序
+        self.counter = defaultdict(int)  # int() = 0
+        self.droped = defaultdict(int)
+        super().__init__(os.path.normpath(data_dir), kind, tokenizer)  # 不可调换顺序
 
-    def read(self, file_path: str) -> List:
+    def read(self, path: str, kind: str) -> List:
+        if not os.path.isdir(path):
+            raise ValueError(f'"{path}" is not a dir!')
         data = list()
-        with open(file_path, "r") as conllu_file:
-            logger.info(
-                "Reading UD instances from conllu dataset at: %s", file_path)
+        path = f"{path}/*{self.lang}*/*-ud-{kind}.conllu"
+        paths = [os.path.normpath(f) for f in glob.glob(path)]
+        for path in Tqdm(paths, total=len(paths)):
+            data += self.read_one(path)
 
+        # num = reduce(lambda a, b: self.droped[a] + self.droped[b], self.droped)
+        t, d = 0, 0
+        for k in self.droped.keys():
+            t += self.counter[k]
+            d += self.droped[k]
+        Tqdm.write(f'===> Totally {t}, droped {d} one word instence.')
+        return data
+
+    def read_one(self, file_path: str) -> List:
+        data = list()
+        total_num, droped_num = 0, 0
+        # a, b = 0, 0
+        with open(file_path, "r") as conllu_file:
+            name = '/'.join(file_path.split('/')[-2:])
             for annotation in parse_incr(conllu_file):
-                # if len(annotation) < 3:
-                #     print(annotation)
-                #     continue
-                annotation = [
-                    x for x in annotation if isinstance(x["id"], int)]
+                # print(annotation)
+                # annotation = [
+                    # x for x in annotation if isinstance(x["id"], int)]
+                # if random.random() < 0.1:
+                #     for x in annotation:
+                #         a += 1
+                #         if x['form'] == '_':
+                #             b += 1
+
                 if annotation[0]['id'] == 0:
                     for i in range(len(annotation)):
                         annotation[i]['id'] += 1
                 annotation.insert(0, _ROOT)
-                ids = [x["id"] for x in annotation]
-                heads = [x["head"] for x in annotation]
-                lemma = [x["lemma"] for x in annotation]
-                deprel = [x["deprel"] for x in annotation]
-                if self.multi_lang:
-                    words = [f'{x["form"]}_{self.lang}' for x in annotation]
+                total_num += 1
+                if self.max_len > len(annotation) > self.min_len:
+                    data.append(self.text_to_instance(annotation))
                 else:
-                    words = [x["form"] for x in annotation]
-                # if self.use_language_specific_pos:
-                #     pos_tags = [x["xpostag"] for x in annotation]
-                upos_tag = [x["upostag"] for x in annotation]
-                data.append(self.text_to_instance(
-                    ids, words, lemma, upos_tag, (deprel, heads)))
+                    Tqdm.write(annotation[1]['form'])
+                    droped_num += 1
+            self.counter[name], self.droped[name] = total_num, droped_num
+        Tqdm.write(
+            f"===> {name} Totally {total_num}, droped {droped_num}.'")
+        # if b/a > 0.2:
+        #     rec.append(name)
+        #     Tqdm.write(f"=============> {name} ????.'")
         return data
 
     @overrides
-    def text_to_instance(self, ids: List[int], words: List[str], lemma: List[str],
-                         upos_tags: List[str], dependencies: Tuple = None):
-        fields: Dict[str, object] = {}
+    def text_to_instance(self, annotation: List):
+        fields = defaultdict(list)
+        for x in annotation:
+            for k in self.ud_keys:
+                fields[k].append(x[k])
 
-        word_pieces = dict()
+        words, word_piece = fields['form'], dict()
         if self.tokenizer is not None:
             tokens = ['<root>']
             for i, word in enumerate(words[1:], 1):
-                _tokens = self.tokenizer.tokenize(word)
-                tokens.append(_tokens[0])
-                if len(_tokens) > 1:
-                    word_pieces[i] = [self.tokenizer.vocab[p] for p in _tokens]
+                if word == '_' and annotation[i]['lemma'] != '_':
+                    word = annotation[i]['lemma']
+                piece = self.tokenizer.tokenize(word)
+                if len(piece) > 0:
+                    tokens.append(piece[0])
+                    if len(piece) > 1:
+                        word_piece[i] = [self.tokenizer.vocab[p]
+                                         for p in piece]
+                else:
+                    tokens.append(word)
         else:
             tokens = [word.lower() for word in words]
 
-        fields['word_ids'] = ids
         fields["words"] = tokens
-        fields['lemma'] = lemma
-        fields["upos"] = upos_tags
-        fields['word_pieces'] = word_pieces
-        if dependencies is not None:
-            fields["deprel"], fields["heads"] = dependencies
-
-        fields["metadata"] = {"words": words, "pos": upos_tags,
-                              "lang": self.lang, 'len': len(ids)}
-        return fields
+        fields["word_pieces"] = word_piece
+        fields["metadata"] = {"lang": self.lang, 'len': len(annotation)}
+        return dict(fields)
 
     def collate_fn(self, batch) -> Dict[str, Any]:
-        used_keys = ('words', 'upos', 'deprel', 'heads', 'word_ids')
-
-        ids_sorted = sorted(range(len(batch)),
-                            key=lambda x: batch[x]['metadata']['len'],
+        ids_sorted = sorted(batch, key=lambda ins: ins['metadata']['len'],
                             reverse=True)
 
         max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
@@ -105,14 +138,14 @@ class ConlluDataset(DataSet):
         result['seq_lens'], result['sentences'] = list(), list()
         result['word_pieces'] = dict()
 
-        for i, o in zip(range(len(batch)), ids_sorted):
-            seq_len = len(batch[o]['words'])
+        for i, origin in zip(range(len(batch)), ids_sorted):
+            seq_len = len(batch[origin]['words'])
             result['seq_lens'].append(seq_len)
-            result['sentences'].append(batch[o]['metadata']['words'])
+            result['sentences'].append(batch[origin]['form'])
             result['mask'][i, 1:seq_len] = True
-            for key in used_keys:
-                result[key][i, :seq_len] = torch.LongTensor(batch[o][key])
-            for w, piece in batch[o]['word_pieces'].items():
+            for key in ('words', 'upostag', 'deprel', 'head', 'id'):
+                result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
+            for w, piece in batch[origin]['word_pieces'].items():
                 result['word_pieces'][(i, w)] = torch.LongTensor(piece)
 
         return result

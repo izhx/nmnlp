@@ -9,6 +9,8 @@ from tjunlp.core.vocabulary import Vocabulary
 
 logger = logging.getLogger(__name__)
 
+KIND_TRAIN, KIND_DEV, KIND_TEST = 'train', 'dev', 'test'
+
 
 class DataSet(Dataset):
     """
@@ -16,19 +18,19 @@ class DataSet(Dataset):
     """
     index_fields: Tuple[str]  # 需要index的field
 
-    def __init__(self, file_path: str, tokenizer=None, in_memory: bool = True):
+    def __init__(self, path: str, kind: str = KIND_TRAIN, tokenizer=None,
+                 in_memory: bool = True):
+        self.tokenizer = tokenizer
         self.in_memory = in_memory  # TODO(izhx): 完成数据不在内存的代码
         self.indexed = False
-        self.vocab = None
-        self.tokenizer = tokenizer
 
-        if os.path.exists(file_path):
+        if os.path.exists(path):
             if in_memory:
-                self.data = self.read(file_path)
+                self.data = self.read(path, kind)
                 if not self.data:
-                    raise ConfigurationError(f"No data at: {file_path}")
+                    raise ConfigurationError(f"No data at: {path}")
         else:
-            raise ConfigurationError(f"File not exist! Please check : {file_path}")
+            raise ConfigurationError(f"File not exist! Please check : {path}")
 
     def __getitem__(self, item):
         if self.in_memory:
@@ -48,10 +50,10 @@ class DataSet(Dataset):
         else:
             raise NotImplementedError('Feature in coming.')
 
-    def read(self, file_path) -> List:
+    def read(self, path, kind) -> List:
         raise NotImplementedError
 
-    def text_to_instance(self):
+    def text_to_instance(self, *inputs):
         raise NotImplementedError
 
     def collate_fn(self, batch) -> Tuple[Dict, Dict]:
@@ -63,7 +65,6 @@ class DataSet(Dataset):
         """
         self.data = [self.instance_to_index(ins, vocab) for ins in self.data]
         self.indexed = True
-        self.vocab = vocab
 
     @classmethod
     def instance_to_index(cls, instance, vocab: Vocabulary):

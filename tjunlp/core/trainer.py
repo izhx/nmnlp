@@ -22,7 +22,7 @@ from tjunlp.common.util import sys_info, sec_to_time
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
 from tjunlp.core.vocabulary import Vocabulary
-from tjunlp.data import KEY_TRAIN, KEY_DEV
+from tjunlp.data import KIND_TRAIN, KIND_DEV
 
 EARLY_STOP_THRESHOLD = 5
 
@@ -123,10 +123,10 @@ class Trainer(object):
         self.time_epoch = 0
         self.time_eval = 0
         self.best_metric = None
-        self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}
+        self.loss_record = {KIND_TRAIN: 0, KIND_DEV: 0}
         self.stop_counter = 0
 
-        for key in (KEY_TRAIN, KEY_DEV):
+        for key in (KIND_TRAIN, KIND_DEV):
             if not self.dataset[key].indexed:
                 self.dataset[key].index_dataset(vocabulary)
 
@@ -156,14 +156,14 @@ class Trainer(object):
         return time_left
 
     def train(self):
-        train_loader = DataLoader(dataset=self.dataset[KEY_TRAIN],
+        train_loader = DataLoader(dataset=self.dataset[KIND_TRAIN],
                                   batch_size=self.kwargs['train_batch'],
                                   **self.cfg['dataloader'],
-                                  collate_fn=self.dataset[KEY_TRAIN].collate_fn)
-        dev_loader = DataLoader(dataset=self.dataset[KEY_DEV],
+                                  collate_fn=self.dataset[KIND_TRAIN].collate_fn)
+        dev_loader = DataLoader(dataset=self.dataset[KIND_DEV],
                                 batch_size=self.kwargs['dev_batch'],
                                 **self.cfg['dataloader'],
-                                collate_fn=self.dataset[KEY_DEV].collate_fn)
+                                collate_fn=self.dataset[KIND_DEV].collate_fn)
 
         time_train_start = time.time()
         epoch = self.epoch_start
@@ -190,7 +190,7 @@ class Trainer(object):
 
     def eval(self, dataset: DataSet = None, batch_size: int = None, device: str = None):
         if dataset is None:
-            dataset = self.dataset[KEY_DEV]
+            dataset = self.dataset[KIND_DEV]
         if batch_size is None:
             batch_size = self.kwargs['dev_batch']
         if device is None:
