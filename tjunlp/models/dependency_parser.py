@@ -268,20 +268,22 @@ class DependencyParser(Model, GraphParser):
 
     def __init__(self,
                  criterion,
+                 num_words: int,
                  num_rel: int,
                  num_upos: int,
                  word_embedding: Dict[str, Any],
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
-                 transform_dim: int = 200,
+                 transform_dim: int = 0,
                  arc_dim: int = 250,
                  label_dim: int = 50,
                  dropout: float = 0,
                  greedy_infer: bool = False,
                  **kwargs):
         super().__init__(criterion)
-        self.word_embedding = build_word_embedding(**word_embedding)
+        self.word_embedding = build_word_embedding(
+            **word_embedding, num_embeddings=num_words)
         if transform_dim > 0:
             if 'layer_num' in word_embedding and word_embedding['layer_num'] > 1:
                 self.word_mlp = nn.ModuleList([NonLinear(
@@ -340,9 +342,9 @@ class DependencyParser(Model, GraphParser):
 
     def forward(self,  # pylint:disable=arguments-differ
                 words: torch.Tensor,
-                upos: torch.Tensor,
+                upostag: torch.Tensor,
                 mask: torch.Tensor,  # 有词的地方为True
-                heads: torch.Tensor = None,
+                head: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
         feat = self.word_embedding(words, **kwargs)
@@ -354,14 +356,14 @@ class DependencyParser(Model, GraphParser):
             feat = self.fusion(feat)
 
         if self.other_embedding is not None:
-            upos = self.other_embedding(upos, **kwargs)
-            feat = torch.cat([feat, upos], dim=2)
+            upostag = self.other_embedding(upostag, **kwargs)
+            feat = torch.cat([feat, upostag], dim=2)
 
         feat = self.word_dropout(feat)
         if self.encoder is not None:
             feat = self.encoder(feat, **kwargs)  # unpack会去掉[SEP]那一列
             if feat.shape[1] == words.shape[1] - 1:
-                mask, heads, deprel = remove_sep([mask, heads, deprel])
+                mask, head, deprel = remove_sep([mask, head, deprel])
 
         feat = self.word_dropout(feat)
         if self.mlp is not None:
@@ -375,19 +377,19 @@ class DependencyParser(Model, GraphParser):
         rel_pred = self.rel_classifier(feat[1], feat[3])  # (b,s,s,c)
 
         # use gold or predicted arc to predict label
-        head_pred = heads if self.training else self.decoder(arc_pred, mask)
+        head_pred = head if self.training else self.decoder(arc_pred, mask)
 
         rel_pred = torch.gather(rel_pred, 2, head_pred.unsqueeze(
             2).unsqueeze(3).expand(-1, -1, -1, rel_pred.shape[-1])).squeeze(2)
         output = {'head_pred': head_pred, 'rel_pred': rel_pred}
 
         if self.training or self.evaluating:
-            loss = self.loss(arc_pred, rel_pred, heads, deprel, mask)
+            loss = self.loss(arc_pred, rel_pred, head, deprel, mask)
             output['loss'] = loss
         if self.evaluating:
             with torch.no_grad():
                 output['metric'] = self.get_metrics(
-                    head_pred, rel_pred, heads, deprel, mask)
+                    head_pred, rel_pred, head, deprel, mask)
 
         return output
 

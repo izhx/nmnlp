@@ -43,6 +43,7 @@ class ConlluDataset(DataSet):
         self.lang = lang
         self.min_len = min_len
         self.use_language_specific_pos = use_language_specific_pos
+        self.source = dict()
         self.counter = defaultdict(int)  # int() = 0
         self.droped = defaultdict(int)
         super().__init__(os.path.normpath(data_dir), kind, tokenizer)  # 不可调换顺序
@@ -70,10 +71,12 @@ class ConlluDataset(DataSet):
         # a, b = 0, 0
         with open(file_path, "r") as conllu_file:
             name = '/'.join(file_path.split('/')[-2:])
+            source_id = len(self.source)
+            self.source[source_id] = name
             for annotation in parse_incr(conllu_file):
                 # print(annotation)
-                # annotation = [
-                    # x for x in annotation if isinstance(x["id"], int)]
+                annotation = [
+                    x for x in annotation if isinstance(x["id"], int)]
                 # if random.random() < 0.1:
                 #     for x in annotation:
                 #         a += 1
@@ -86,20 +89,20 @@ class ConlluDataset(DataSet):
                 annotation.insert(0, _ROOT)
                 total_num += 1
                 if self.max_len > len(annotation) > self.min_len:
-                    data.append(self.text_to_instance(annotation))
+                    data.append(self.text_to_instance(annotation, source_id))
                 else:
-                    Tqdm.write(annotation[1]['form'])
+                    # Tqdm.write(annotation[1]['form'])
                     droped_num += 1
             self.counter[name], self.droped[name] = total_num, droped_num
         Tqdm.write(
-            f"===> {name} Totally {total_num}, droped {droped_num}.'")
+            f"===> [{name}]  totally {total_num}, droped {droped_num}.")
         # if b/a > 0.2:
         #     rec.append(name)
         #     Tqdm.write(f"=============> {name} ????.'")
         return data
 
     @overrides
-    def text_to_instance(self, annotation: List):
+    def text_to_instance(self, annotation: List, source: str):
         fields = defaultdict(list)
         for x in annotation:
             for k in self.ud_keys:
@@ -122,14 +125,18 @@ class ConlluDataset(DataSet):
         else:
             tokens = [word.lower() for word in words]
 
+        for i, h in enumerate(fields['head']):
+            if h is None:
+                fields['head'][i] = 0  # 指向虚根，在UD_Portuguese-Bosque等会有None
+
         fields["words"] = tokens
         fields["word_pieces"] = word_piece
-        fields["metadata"] = {"lang": self.lang, 'len': len(annotation)}
+        fields["metadata"] = {'len': len(annotation), 'source': source}
         return dict(fields)
 
     def collate_fn(self, batch) -> Dict[str, Any]:
-        ids_sorted = sorted(batch, key=lambda ins: ins['metadata']['len'],
-                            reverse=True)
+        ids_sorted = sorted(
+            range(len(batch)), key=lambda i: batch[i]['metadata']['len'], reverse=True)
 
         max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
         result = defaultdict(lambda: torch.zeros(
