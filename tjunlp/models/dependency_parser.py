@@ -289,13 +289,17 @@ class DependencyParser(Model, GraphParser):
                 self.word_mlp = nn.ModuleList([NonLinear(
                     self.word_embedding.output_dim, transform_dim, activation=GELU(
                     )) for _ in range(word_embedding['layer_num'])])
+                self.word_transform = lambda x: [
+                    self.word_mlp[i](x[i]) for i in range(x.size(0))]
             else:
                 self.word_mlp = NonLinear(self.word_embedding.output_dim,
                                           transform_dim, activation=GELU())
+                self.word_transform = lambda x: self.word_mlp(x)
             feat_dim: int = transform_dim
         else:
             feat_dim: int = self.word_embedding.output_dim
             self.word_mlp = None
+            self.word_transform = lambda x: x
 
         if 'feature_fusion' in kwargs:  # 多层融合方式
             if kwargs['feature_fusion'] == 'cat':
@@ -348,10 +352,7 @@ class DependencyParser(Model, GraphParser):
                 deprel: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
         feat = self.word_embedding(words, **kwargs)
-        if isinstance(self.word_mlp, nn.ModuleList):
-            feat = [self.word_mlp[i](feat[i]) for i, f in enumerate(feat)]
-        elif isinstance(self.word_mlp, NonLinear):
-            feat = self.word_mlp(feat)
+        feat = self.word_transform(feat)
         if self.fusion is not None:
             feat = self.fusion(feat)
 

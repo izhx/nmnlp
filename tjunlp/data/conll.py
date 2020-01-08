@@ -26,12 +26,23 @@ rec = list()
 
 class ConlluDataset(DataSet):
     """
-    ud v2.2 的 ja_bccjwj, Arabic-NYUAD 没有词，删掉
-               Marathi_UFAL 的dev，有许多词没有form只有lemma
+    ud v2.2. Marathi_UFAL 的dev，有许多词没有form只有lemma
     """
     ud_keys = ('id', 'form', 'upostag', 'head', 'deprel')  # 暂时不用 'lemma'
     index_fields = ('words', 'upostag', 'deprel')
     max_len = 128
+    bad_dirs = {'UD_Arabic-NYUAD', 'UD_Japanese-BCCWJ'}  # 许可证原因，没有词
+    miss_dirs = {  # 缺少验证集或者训练集
+        'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB', 'UD_Kazakh-KTB',
+        'UD_North_Sami-Giella', 'UD_Irish-IDT', 'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG',
+        'UD_Breton-KEB', 'UD_Thai-PUD', 'UD_Warlpiri-UFAL', 'UD_Armenian-ArmTDP',
+        'UD_Naija-NSC', 'UD_Kurmanji-MG', 'UD_Upper_Sorbian-UFAL', 'UD_Buryat-BDT',
+        'UD_Komi_Zyrian-Lattice', 'UD_Cantonese-HK', 'UD_Faroese-OFT'}
+    small_dirs = {  # 数据较少，训练集小于1700
+        'UD_Tamil-TTB', 'UD_Afrikaans-AfriBooms', 'UD_Belarusian-HSE',
+        'UD_Lithuanian-HSE', 'UD_Coptic-Scriptorium', 'UD_Uyghur-UDT',
+        'UD_Telugu-MTG', 'UD_Vietnamese-VTB', 'UD_Greek-GDT', 'UD_Marathi-UFAL',
+        'UD_Hungarian-Szeged', 'UD_Swedish_Sign_Language-SSLC'}
 
     def __init__(self,
                  data_dir: str,
@@ -51,24 +62,26 @@ class ConlluDataset(DataSet):
     def read(self, path: str, kind: str) -> List:
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
+        discarded = self.bad_dirs | self.miss_dirs | self.small_dirs
         data = list()
         path = f"{path}/*{self.lang}*/*-ud-{kind}.conllu"
-        paths = [os.path.normpath(f) for f in glob.glob(path)]
-        for path in Tqdm(paths, total=len(paths)):
+        path_list = [os.path.normpath(f) for f in glob.glob(path)]
+        path_list = [p for p in path_list if p.split('/')[-2] not in discarded]
+        for path in Tqdm(path_list, total=len(path_list)):
             data += self.read_one(path)
 
-        # num = reduce(lambda a, b: self.droped[a] + self.droped[b], self.droped)
         t, d = 0, 0
         for k in self.droped.keys():
             t += self.counter[k]
             d += self.droped[k]
-        Tqdm.write(f'===> Totally {t}, droped {d} one word instence.')
+            self.counter[k] -= self.droped[k]
+        print(f'===> Totally {t}, droped {d} one word instence.')
         return data
 
     def read_one(self, file_path: str) -> List:
         data = list()
         total_num, droped_num = 0, 0
-        # a, b = 0, 0
+        a, b = 0, 0
         with open(file_path, "r") as conllu_file:
             name = '/'.join(file_path.split('/')[-2:])
             source_id = len(self.source)
@@ -77,11 +90,11 @@ class ConlluDataset(DataSet):
                 # print(annotation)
                 annotation = [
                     x for x in annotation if isinstance(x["id"], int)]
-                # if random.random() < 0.1:
-                #     for x in annotation:
-                #         a += 1
-                #         if x['form'] == '_':
-                #             b += 1
+                if random.random() < 0.1:
+                    for x in annotation:
+                        a += 1
+                        if x['form'] == '_':
+                            b += 1
 
                 if annotation[0]['id'] == 0:
                     for i in range(len(annotation)):
@@ -96,9 +109,9 @@ class ConlluDataset(DataSet):
             self.counter[name], self.droped[name] = total_num, droped_num
         Tqdm.write(
             f"===> [{name}]  totally {total_num}, droped {droped_num}.")
-        # if b/a > 0.2:
-        #     rec.append(name)
-        #     Tqdm.write(f"=============> {name} ????.'")
+        if b/a > 0.2:
+            rec.append(name)
+            Tqdm.write(f"=============> {name} ????.'")
         return data
 
     @overrides
