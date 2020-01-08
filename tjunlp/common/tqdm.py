@@ -38,17 +38,10 @@ class Tqdm(_tqdm):
     #   rate_inv, rate_inv_fmt, postfix, unit_divisor,
     #   remaining, remaining_s.
 
-    def __init__(self, iterable=None, desc=None, total=None, leave=False,
-                 file=None, ncols=None, mininterval=0.1, maxinterval=10.0,
-                 miniters=None, ascii=None, disable=False, unit='it',
-                 unit_scale=False, dynamic_ncols=False, smoothing=0.3,
-                 bar_format=default_bar_format, initial=0, position=None, postfix=None,
-                 unit_divisor=1000, write_bytes=None, lock_args=None,
-                 gui=False):
-        super().__init__(iterable, desc, total, leave, file, ncols, mininterval,
-                         maxinterval, miniters, ascii, disable, unit, unit_scale,
-                         dynamic_ncols, smoothing, bar_format, initial, position,
-                         postfix, unit_divisor, write_bytes, lock_args, gui)
+    def __init__(self, iterable, desc=None, **kwargs):
+        bar_format: str = '{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+        super().__init__(iterable, desc, leave=False, dynamic_ncols=True,
+                         bar_format=bar_format, **kwargs)
 
     @staticmethod
     def set_default_mininterval(value: float) -> None:

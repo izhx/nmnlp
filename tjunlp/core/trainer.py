@@ -12,7 +12,7 @@ import torch
 # import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.checks import ConfigurationError
@@ -73,6 +73,7 @@ class Trainer(object):
                  vocabulary: Vocabulary,
                  model: Model,
                  optimizer: Optimizer,
+                 sampler: Sampler = None,  # train data sampler
                  scheduler: Any = None,  # _LRScheduler is protected
                  device: str = DEVICE_CPU,
                  clip_grad: Dict = None,
@@ -80,8 +81,8 @@ class Trainer(object):
                  epoch_num: int = 100,
                  epoch_start: int = 0,
                  update_every: int = 1,
-                 validate_every: int = 10,
-                 validate_after: int = 30,
+                 validate_every: int = 1,
+                 validate_after: int = 0,
                  save_after: int = 30,
                  save_dir: str = DEFAULT_SAVE_DIR,
                  save_strategy: str = SAVE_STRATEGY_BEST,
@@ -89,7 +90,7 @@ class Trainer(object):
                  log_batch: bool = False,
                  log_dir: str = DEFAULT_LOG_DIR,
                  log_interval: int = 10,
-                 dev_on_cpu: bool = True,
+                 dev_on_cpu: bool = False,
                  prefix: str = DEFAULT_PREFIX,
                  pre_train_path: str = None,
                  **kwargs):
@@ -98,6 +99,7 @@ class Trainer(object):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.sampler = sampler
         self.kwargs = kwargs
         self.clip_grad = clip_grad
         self.early_stop = early_stop
@@ -157,13 +159,13 @@ class Trainer(object):
         return time_left
 
     def train(self):
+        shuffle = self.sampler is None
         train_loader = DataLoader(dataset=self.dataset[KIND_TRAIN],
-                                  batch_size=self.kwargs['train_batch'],
-                                  **self.cfg['dataloader'],
+                                  batch_size=self.kwargs['batch_size'],
+                                  shuffle=shuffle, sampler=self.sampler,
                                   collate_fn=self.dataset[KIND_TRAIN].collate_fn)
         dev_loader = DataLoader(dataset=self.dataset[KIND_DEV],
-                                batch_size=self.kwargs['dev_batch'],
-                                **self.cfg['dataloader'],
+                                batch_size=self.kwargs['batch_size'],
                                 collate_fn=self.dataset[KIND_DEV].collate_fn)
 
         time_train_start = time.time()
@@ -242,7 +244,7 @@ class Trainer(object):
         else:
             tqdm_desc = f"[{sys_info()}] Train epoch {epoch}"
 
-        for i, batch in Tqdm(enumerate(loader), total=len(loader), desc=tqdm_desc):
+        for i, batch in Tqdm(enumerate(loader), desc=tqdm_desc, total=len(loader)):
             to_device(batch, device)
             loss = model(**batch)['loss']
             loss_epoch += loss.item()

@@ -54,7 +54,8 @@ class ConlluDataset(DataSet):
         self.lang = lang
         self.min_len = min_len
         self.use_language_specific_pos = use_language_specific_pos
-        self.source = dict()
+        self.source2id = dict()
+        self.percentage = defaultdict(int)
         self.counter = defaultdict(int)  # int() = 0
         self.droped = defaultdict(int)
         super().__init__(os.path.normpath(data_dir), kind, tokenizer)  # 不可调换顺序
@@ -67,7 +68,7 @@ class ConlluDataset(DataSet):
         path = f"{path}/*{self.lang}*/*-ud-{kind}.conllu"
         path_list = [os.path.normpath(f) for f in glob.glob(path)]
         path_list = [p for p in path_list if p.split('/')[-2] not in discarded]
-        for path in Tqdm(path_list, total=len(path_list)):
+        for path in Tqdm(path_list):
             data += self.read_one(path)
 
         t, d = 0, 0
@@ -76,6 +77,8 @@ class ConlluDataset(DataSet):
             d += self.droped[k]
             self.counter[k] -= self.droped[k]
         print(f'===> Totally {t}, droped {d} one word instence.')
+        t -= d
+        self.percentage = {k: float(v)/t for k, v in self.percentage.items()}
         return data
 
     def read_one(self, file_path: str) -> List:
@@ -83,9 +86,12 @@ class ConlluDataset(DataSet):
         total_num, droped_num = 0, 0
         a, b = 0, 0
         with open(file_path, "r") as conllu_file:
-            name = '/'.join(file_path.split('/')[-2:])
-            source_id = len(self.source)
-            self.source[source_id] = name
+            lang = file_path.split('/')[-2].split('-')[0][3:]
+            if lang not in self.source2id:
+                source_id = len(self.source2id)
+                self.source2id[lang] = source_id
+            else:
+                source_id = self.source2id[lang]
             for annotation in parse_incr(conllu_file):
                 # print(annotation)
                 annotation = [
@@ -106,7 +112,9 @@ class ConlluDataset(DataSet):
                 else:
                     # Tqdm.write(annotation[1]['form'])
                     droped_num += 1
+            name = '/'.join(file_path.split('/')[-2:])
             self.counter[name], self.droped[name] = total_num, droped_num
+            self.percentage[source_id] += total_num - droped_num
         Tqdm.write(
             f"===> [{name}]  totally {total_num}, droped {droped_num}.")
         if b/a > 0.2:
