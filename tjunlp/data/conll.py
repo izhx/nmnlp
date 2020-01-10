@@ -32,12 +32,17 @@ class ConlluDataset(DataSet):
     index_fields = ('words', 'upostag', 'deprel')
     max_len = 128
     bad_dirs = {'UD_Arabic-NYUAD', 'UD_Japanese-BCCWJ'}  # 许可证原因，没有词
-    miss_dirs = {  # 缺少验证集或者训练集
-        'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB', 'UD_Kazakh-KTB',
-        'UD_North_Sami-Giella', 'UD_Irish-IDT', 'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG',
-        'UD_Breton-KEB', 'UD_Thai-PUD', 'UD_Warlpiri-UFAL', 'UD_Armenian-ArmTDP',
-        'UD_Naija-NSC', 'UD_Kurmanji-MG', 'UD_Upper_Sorbian-UFAL', 'UD_Buryat-BDT',
-        'UD_Komi_Zyrian-Lattice', 'UD_Cantonese-HK', 'UD_Faroese-OFT'}
+    # miss_dirs = {  # 缺少验证集或者训练集
+    #     'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB', 'UD_Kazakh-KTB',
+    #     'UD_North_Sami-Giella', 'UD_Irish-IDT', 'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG',
+    #     'UD_Breton-KEB', 'UD_Thai-PUD', 'UD_Warlpiri-UFAL', 'UD_Armenian-ArmTDP',
+    #     'UD_Naija-NSC', 'UD_Kurmanji-MG', 'UD_Upper_Sorbian-UFAL', 'UD_Buryat-BDT',
+    #     'UD_Komi_Zyrian-Lattice', 'UD_Cantonese-HK', 'UD_Faroese-OFT'}
+    miss_dirs = {  # 只有测试集
+        'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB',
+        'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG', 'UD_Breton-KEB', 'UD_Thai-PUD',
+        'UD_Warlpiri-UFAL', 'UD_Naija-NSC', 'UD_Komi_Zyrian-Lattice',
+        'UD_Cantonese-HK', 'UD_Faroese-OFT'}
     small_dirs = {  # 数据较少，训练集小于1700
         'UD_Tamil-TTB', 'UD_Afrikaans-AfriBooms', 'UD_Belarusian-HSE',
         'UD_Lithuanian-HSE', 'UD_Coptic-Scriptorium', 'UD_Uyghur-UDT',
@@ -63,7 +68,7 @@ class ConlluDataset(DataSet):
     def read(self, path: str, kind: str) -> List:
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
-        discarded = self.bad_dirs | self.miss_dirs | self.small_dirs
+        discarded = self.bad_dirs | self.miss_dirs
         data = list()
         path = f"{path}/*{self.lang}*/*-ud-{kind}.conllu"
         path_list = [os.path.normpath(f) for f in glob.glob(path)]

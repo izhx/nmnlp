@@ -342,7 +342,7 @@ class DependencyParser(Model, GraphParser):
         self.decoder = lambda x, y: self.decode(x, y, greedy_infer)
         self.split_sizes = [arc_dim, label_dim]
         # for calculate metrics precisely
-        self.metrics_counter = OrderedDict({'arc': 0, 'rel': 0, 'num': 0})
+        self.metric_counter = OrderedDict({'arc': 0, 'rel': 0, 'num': 0})
 
     def forward(self,  # pylint:disable=arguments-differ
                 words: torch.Tensor,
@@ -382,34 +382,38 @@ class DependencyParser(Model, GraphParser):
 
         rel_pred = torch.gather(rel_pred, 2, head_pred.unsqueeze(
             2).unsqueeze(3).expand(-1, -1, -1, rel_pred.shape[-1])).squeeze(2)
-        output = {'head_pred': head_pred, 'rel_pred': rel_pred}
+        output = {'head_pred': head_pred, 'rel_pred': rel_pred, 'loss': 0}
 
         if self.training or self.evaluating:
             loss = self.loss(arc_pred, rel_pred, head, deprel, mask)
             output['loss'] = loss
-        if self.evaluating:
+        if not self.training:
             with torch.no_grad():
-                output['metric'] = self.get_metrics(
+                output['metric'] = self.get_metric(
                     head_pred, rel_pred, head, deprel, mask)
 
         return output
 
     @overrides
-    def get_metrics(self,  # pylint:disable=arguments-differ
-                    head_pred: torch.Tensor = None,
-                    rel_pred: torch.Tensor = None,
-                    head_gt: torch.Tensor = None,
-                    rel_gt: torch.Tensor = None,
-                    mask: torch.Tensor = None,
-                    reset: bool = False) -> Dict[str, float]:
+    def get_metric(self,  # pylint:disable=arguments-differ
+                   head_pred: torch.Tensor = None,
+                   rel_pred: torch.Tensor = None,
+                   head_gt: torch.Tensor = None,
+                   rel_gt: torch.Tensor = None,
+                   mask: torch.Tensor = None,
+                   reset: bool = False,
+                   counter: OrderedDict = None) -> Dict[str, float]:
         """
         Evaluate the performance of prediction.
         reset = False， 计数，返回单次结果， True 用计数计算并清空
         """
+        if counter is not None:
+            arc, rel, num = counter.values()
+            return {'UAS': arc * 1.0 / num, 'LAS': rel * 1.0 / num}
         if reset:
-            arc, rel, num = self.metrics_counter.values()
-            for k in self.metrics_counter:
-                self.metrics_counter[k] = 0
+            arc, rel, num = self.metric_counter.values()
+            for k in self.metric_counter:
+                self.metric_counter[k] = 0
             return {'UAS': arc * 1.0 / num, 'LAS': rel * 1.0 / num}
 
         if len(rel_pred.shape) > len(rel_gt.shape):
@@ -424,17 +428,14 @@ class DependencyParser(Model, GraphParser):
         arc = head_pred_correct.sum().item()
         rel = rel_pred_correct.sum().item()
         num = mask.sum().item()
-        self.metrics_counter['arc'] += arc
-        self.metrics_counter['rel'] += rel
-        self.metrics_counter['num'] += num
+        self.metric_counter['arc'] += arc
+        self.metric_counter['rel'] += rel
+        self.metric_counter['num'] += num
 
         return {'UAS': arc * 1.0 / num, 'LAS': rel * 1.0 / num}
 
-    def loss(self, arc_logits: torch.Tensor,
-             rel_logits: torch.Tensor,
-             arc_gt: torch.Tensor,
-             rel_gt: torch.Tensor,
-             mask: torch.Tensor) -> torch.Tensor:
+    def loss(self, arc_logits: torch.Tensor, rel_logits: torch.Tensor,
+             arc_gt: torch.Tensor, rel_gt: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         _, s, n = rel_logits.shape
         flip_mask = mask.eq(False)
         flip_mask[:, 0] = True

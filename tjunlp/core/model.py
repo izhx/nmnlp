@@ -55,26 +55,29 @@ class Model(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def get_metrics(self, reset=False, **kwargs) -> Dict[str, float]:
+    def get_metric(self, reset=False, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
 
     def is_best(self, metric: Dict[str, float], former: Dict[str, float]) -> bool:
         raise NotImplementedError
 
-    def train_mode(self):
+    def train_mode(self, device):
         """
         Keep specific modules at eval model.
         """
+        self.to(device)
         self.evaluating = False
         self.train()
         for module in self.freeze_modules:
             module.eval()
         return self
 
-    def eval_mode(self):
+    def eval_mode(self, device):
+        self.to(device)
         self.evaluating = True
         return self.eval()
 
-    def test_mode(self):
+    def test_mode(self, device):
+        self.to(device)
         self.evaluating = False
         return self.eval()

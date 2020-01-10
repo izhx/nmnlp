@@ -1,7 +1,7 @@
 import logging
 import subprocess
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import psutil
 
@@ -77,8 +77,11 @@ def sec_to_time(seconds) -> str:
     return f"{int(d)}d {int(h)}h {int(m)}m {s:.2f}s"
 
 
-def merge_dicts(dicts: List[Dict], key_prefix='', avg=True) -> Dict:
+def merge_dicts(dicts: Union[List[Dict], Dict[Dict]], key_prefix='', avg=False) -> Dict:
     result: Dict[str, int] = defaultdict(lambda: 0)
+    if isinstance(dicts, Dict):
+        dicts = dicts.values()
+
     for d in dicts:
         for k, v in d.items():
             result[key_prefix + k] += v
