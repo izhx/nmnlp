@@ -62,22 +62,22 @@ def sys_info() -> str:
 
 
 def sec_to_time(seconds) -> str:
-    time = f"{seconds:.2f}s"
     if seconds < 60:
-        return time
+        return f"{str(int(seconds)).rjust(2)}s"
     m, s = divmod(seconds, 60)
-    time = f"{int(m)}m {s:.2f}s"
+    time = f"{str(int(s)).rjust(2)}s"
     if m < 60:
-        return time
+        return f"{str(int(m)).rjust(2)}m " + time
     h, m = divmod(m, 60)
-    time = f"{int(h)}h {int(m)}m {s:.2f}s"
+    time = f"{str(int(m)).rjust(2)}m " + time
     if h < 24:
-        return time
+        return f"{str(int(h)).rjust(2)}h " + time
     d, h = divmod(h, 24)
-    return f"{int(d)}d {int(h)}h {int(m)}m {s:.2f}s"
+    return f"{str(int(d)).rjust(2)}d {str(int(h)).rjust(2)}h " + time
 
 
-def merge_dicts(dicts: Union[List[Dict], Dict[Dict]], key_prefix='', avg=False) -> Dict:
+def merge_dicts(dicts: Union[List[Dict], Dict[str, Dict]], key_prefix='',
+                avg=False) -> Dict:
     result: Dict[str, int] = defaultdict(lambda: 0)
     if isinstance(dicts, Dict):
         dicts = dicts.values()

@@ -10,6 +10,7 @@ import logging
 import pickle
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
+from itertools import chain
 
 from tjunlp.common.util import field_match
 from tjunlp.common.checks import ConfigurationError
@@ -85,14 +86,16 @@ class _FieldDependentDefaultDict(defaultdict):
 class _TokenToIndexDefaultDict(_FieldDependentDefaultDict):
     def __init__(self, non_padded_fields: Set[str], padding_token: str, oov_token: str) -> None:
         super(_TokenToIndexDefaultDict, self).__init__(non_padded_fields,
-                                                       lambda: {padding_token: 0, oov_token: 1},
+                                                       lambda: {
+                                                           padding_token: 0, oov_token: 1},
                                                        lambda: {})
 
 
 class _IndexToTokenDefaultDict(_FieldDependentDefaultDict):
     def __init__(self, non_padded_fields: Set[str], padding_token: str, oov_token: str) -> None:
         super(_IndexToTokenDefaultDict, self).__init__(non_padded_fields,
-                                                       lambda: {0: padding_token, 1: oov_token},
+                                                       lambda: {
+                                                           0: padding_token, 1: oov_token},
                                                        lambda: {})
 
 
@@ -110,7 +113,8 @@ def _read_pretrained_tokens(embeddings_file_uri: str) -> List[str]:
                 tokens.append(token)
             else:
                 line_begin = line[:20] + '...' if len(line) > 20 else line
-                logger.warning(f'Skipping line number %d: %s', line_number, line_begin)
+                logger.warning(f'Skipping line number %d: %s',
+                               line_number, line_begin)
     return tokens
 
 
@@ -256,7 +260,7 @@ class Vocabulary(object):
 
     @classmethod
     def from_instances(cls,
-                       instances,  # Iterable[Instance], Dataset, ConcatDataset
+                       instances,
                        create_fields: List[str],
                        min_count: Dict[str, int] = None,
                        max_vocab_size: Union[int, Dict[str, int]] = None,
@@ -276,9 +280,16 @@ class Vocabulary(object):
         """
         logger.info("Fitting token dictionary from dataset.")
         # 下面这行代码有点东西
-        field_token_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        field_token_counts: Dict[str, Dict[str, int]
+                                 ] = defaultdict(lambda: defaultdict(int))
         if isinstance(instances, dict):
-            instances = instances['train'] + instances['dev']
+            if isinstance(instances['dev'], dict):
+                instances = chain(
+                    instances['train'], *instances['dev'].values())
+            elif isinstance(instances['dev'], list):
+                instances = chain(instances['train'], *instances['dev'])
+            else:
+                instances = instances['train'] + instances['dev']
         for instance in Tqdm(instances):
             for field in create_fields:
                 for token in instance[field]:
@@ -344,7 +355,8 @@ class Vocabulary(object):
 
         for field in counter:
             if field in pretrained_files:
-                pretrained_list = _read_pretrained_tokens(pretrained_files[field])
+                pretrained_list = _read_pretrained_tokens(
+                    pretrained_files[field])
                 min_embeddings = min_pretrained_embeddings.get(field, 0)
                 if min_embeddings > 0:
                     tokens_old = tokens_to_add.get(field, [])
@@ -467,7 +479,8 @@ class Vocabulary(object):
             print("\n\n----Vocabulary Statistics----\n")
             # Since we don't saved counter info, it is impossible to consider pre-saved portion.
             for field in self._retained_counter:
-                tokens_with_counts = list(self._retained_counter[field].items())
+                tokens_with_counts = list(
+                    self._retained_counter[field].items())
                 tokens_with_counts.sort(key=lambda x: x[1], reverse=True)
                 print(f"\nTop 10 most frequent tokens in field '{field}':")
                 for token, freq in tokens_with_counts[:10]:
@@ -477,11 +490,13 @@ class Vocabulary(object):
 
                 print(f"\nTop 10 longest tokens in field '{field}':")
                 for token, freq in tokens_with_counts[:10]:
-                    print(f"\tToken: {token}\t\tlength: {len(token)}\tFrequency: {freq}")
+                    print(
+                        f"\tToken: {token}\t\tlength: {len(token)}\tFrequency: {freq}")
 
                 print(f"\nTop 10 shortest tokens in field '{field}':")
                 for token, freq in reversed(tokens_with_counts[-10:]):
-                    print(f"\tToken: {token}\t\tlength: {len(token)}\tFrequency: {freq}")
+                    print(
+                        f"\tToken: {token}\t\tlength: {len(token)}\tFrequency: {freq}")
         else:
             # _retained_counter would be set only if instances were used for vocabulary construction.
             logger.info("Vocabulary statistics cannot be printed since "

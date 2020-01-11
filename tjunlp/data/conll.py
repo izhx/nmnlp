@@ -11,7 +11,7 @@ import torch
 from conllu import parse_incr
 
 from tjunlp.common.tqdm import Tqdm
-from tjunlp.core.dataset import DataSet
+from tjunlp.core.dataset import DataSet, KIND_TRAIN, KIND_DEV, KIND_TEST
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,6 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
                      ('upostag', 'root'), ('xpostag', None), ('feats', None),
                      ('head', 0), ('deprel', 'root'), ('deps', None),
                      ('misc', None)])
-
-
-rec = list()
 
 
 class ConlluDataset(DataSet):
@@ -38,7 +35,7 @@ class ConlluDataset(DataSet):
     #     'UD_Breton-KEB', 'UD_Thai-PUD', 'UD_Warlpiri-UFAL', 'UD_Armenian-ArmTDP',
     #     'UD_Naija-NSC', 'UD_Kurmanji-MG', 'UD_Upper_Sorbian-UFAL', 'UD_Buryat-BDT',
     #     'UD_Komi_Zyrian-Lattice', 'UD_Cantonese-HK', 'UD_Faroese-OFT'}
-    miss_dirs = {  # 只有测试集
+    miss_dirs = {  # 只有测试集，12个
         'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB',
         'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG', 'UD_Breton-KEB', 'UD_Thai-PUD',
         'UD_Warlpiri-UFAL', 'UD_Naija-NSC', 'UD_Komi_Zyrian-Lattice',
@@ -50,53 +47,65 @@ class ConlluDataset(DataSet):
         'UD_Hungarian-Szeged', 'UD_Swedish_Sign_Language-SSLC'}
 
     def __init__(self,
-                 data_dir: str,
-                 kind: str = 'train',
+                 data: str,
                  tokenizer: Any = None,
                  lang: str = '',
-                 min_len: int = 2,
-                 use_language_specific_pos: bool = False):
+                 min_len: int = 2):
+        super().__init__(data, tokenizer)
         self.lang = lang
         self.min_len = min_len
-        self.use_language_specific_pos = use_language_specific_pos
+        # self.use_language_specific_pos = use_language_specific_pos
         self.source2id = dict()
         self.percentage = defaultdict(int)
         self.counter = defaultdict(int)  # int() = 0
         self.droped = defaultdict(int)
-        super().__init__(os.path.normpath(data_dir), kind, tokenizer)  # 不可调换顺序
 
-    def read(self, path: str, kind: str) -> List:
+    @classmethod
+    def build(cls,
+              path: str,
+              kind: str = KIND_TRAIN,
+              tokenizer: Any = None,
+              lang: str = '',
+              min_len: int = 2) -> List:
+        path = os.path.normpath(path)
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
-        discarded = self.bad_dirs | self.miss_dirs
-        data = list()
-        path = f"{path}/*{self.lang}*/*-ud-{kind}.conllu"
+        dirs = cls.bad_dirs | cls.miss_dirs
+        if kind == KIND_TEST:
+            dirs = cls.bad_dirs
+        path = f"{path}/*{lang}*/*-ud-{kind}.conllu"
         path_list = [os.path.normpath(f) for f in glob.glob(path)]
-        path_list = [p for p in path_list if p.split('/')[-2] not in discarded]
-        for path in Tqdm(path_list):
-            data += self.read_one(path)
+        path_list = [p for p in path_list if p.split('/')[-2] not in dirs]
 
-        t, d = 0, 0
-        for k in self.droped.keys():
-            t += self.counter[k]
-            d += self.droped[k]
-            self.counter[k] -= self.droped[k]
-        print(f'===> Totally {t}, droped {d} one word instence.')
-        t -= d
-        self.percentage = {k: float(v)/t for k, v in self.percentage.items()}
-        return data
+        if kind == KIND_TRAIN:
+            dataset = cls([], tokenizer, lang, min_len)
+            for path in Tqdm(path_list):
+                dataset.read_one(path)
+            return dataset.stat(len(path_list) > 1)
+        dataset = defaultdict(lambda: cls([], tokenizer, lang, min_len))
+        for path in Tqdm(path_list):
+            lang = path.split('/')[-2].split('-')[0][3:]
+            dataset[lang].read_one(path)
+        return dict(dataset)
 
     def read_one(self, file_path: str) -> List:
-        data = list()
-        total_num, droped_num = 0, 0
-        a, b = 0, 0
+        lang = file_path.split('/')[-2].split('-')[0][3:]
+        if lang not in self.source2id:
+            source_id = len(self.source2id)
+            self.source2id[lang] = source_id
+        else:
+            source_id = self.source2id[lang]
+        total_num, droped_num = self._read(file_path, source_id)
+        name = '/'.join(file_path.split('/')[-2:])
+        self.counter[name], self.droped[name] = total_num, droped_num
+        self.percentage[source_id] += total_num - droped_num
+        Tqdm.write(
+            f"===> [{name}]  totally {total_num}, droped {droped_num}.")
+        return self
+
+    def _read(self, file_path: str, source_id: int = 0):
+        total_num, droped_num, a, b = 0, 0, 0, 0
         with open(file_path, "r") as conllu_file:
-            lang = file_path.split('/')[-2].split('-')[0][3:]
-            if lang not in self.source2id:
-                source_id = len(self.source2id)
-                self.source2id[lang] = source_id
-            else:
-                source_id = self.source2id[lang]
             for annotation in parse_incr(conllu_file):
                 # print(annotation)
                 annotation = [
@@ -113,19 +122,27 @@ class ConlluDataset(DataSet):
                 annotation.insert(0, _ROOT)
                 total_num += 1
                 if self.max_len > len(annotation) > self.min_len:
-                    data.append(self.text_to_instance(annotation, source_id))
+                    self.data.append(
+                        self.text_to_instance(annotation, source_id))
                 else:
                     # Tqdm.write(annotation[1]['form'])
                     droped_num += 1
-            name = '/'.join(file_path.split('/')[-2:])
-            self.counter[name], self.droped[name] = total_num, droped_num
-            self.percentage[source_id] += total_num - droped_num
-        Tqdm.write(
-            f"===> [{name}]  totally {total_num}, droped {droped_num}.")
-        if b/a > 0.2:
-            rec.append(name)
-            Tqdm.write(f"=============> {name} ????.'")
-        return data
+            if b/a > 0.2:
+                Tqdm.write(f"=========> {file_path} ????.'")
+        return total_num, droped_num
+
+    def stat(self, log: bool = False):
+        t, d = 0, 0
+        for k in self.droped.keys():
+            t += self.counter[k]
+            d += self.droped[k]
+            self.counter[k] -= self.droped[k]
+        if log:
+            print(f'===> Totally {t}, droped {d} one word instence.')
+        t -= d
+        self.percentage = {
+            k: float(v)/t for k, v in self.percentage.items()}
+        return self
 
     @overrides
     def text_to_instance(self, annotation: List, source: str):
@@ -134,7 +151,7 @@ class ConlluDataset(DataSet):
             for k in self.ud_keys:
                 fields[k].append(x[k])
 
-        words, word_piece = fields['form'], dict()
+        words, pieces = fields['form'], dict()
         if self.tokenizer is not None:
             tokens = ['<root>']
             for i, word in enumerate(words[1:], 1):
@@ -144,8 +161,7 @@ class ConlluDataset(DataSet):
                 if len(piece) > 0:
                     tokens.append(piece[0])
                     if len(piece) > 1:
-                        word_piece[i] = [self.tokenizer.vocab[p]
-                                         for p in piece]
+                        pieces[i] = [self.tokenizer.vocab[p] for p in piece]
                 else:
                     tokens.append(word)
         else:
@@ -156,7 +172,7 @@ class ConlluDataset(DataSet):
                 fields['head'][i] = 0  # 指向虚根，在UD_Portuguese-Bosque等会有None
 
         fields["words"] = tokens
-        fields["word_pieces"] = word_piece
+        fields["word_pieces"] = pieces
         fields["metadata"] = {'len': len(annotation), 'source': source}
         return dict(fields)
 

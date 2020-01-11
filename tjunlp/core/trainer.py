@@ -22,7 +22,7 @@ from tjunlp.common.util import sys_info, sec_to_time, merge_dicts
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
 from tjunlp.core.vocabulary import Vocabulary
-from tjunlp.data import KIND_TRAIN, KIND_DEV
+from tjunlp.data import KIND_TRAIN, KIND_DEV, index_dataset
 
 EARLY_STOP_THRESHOLD = 5
 
@@ -134,9 +134,7 @@ class Trainer(object):
         self.loss_record = {KIND_TRAIN: 0, KIND_DEV: 0}
         self.stop_counter = 0
 
-        for key in (KIND_TRAIN, KIND_DEV):
-            if not self.dataset[key].indexed:
-                self.dataset[key].index_dataset(vocabulary)
+        index_dataset(dataset, vocabulary)
 
         if tensorboard:
             if pre_train_path:  # 有path则是继续训练
@@ -158,7 +156,7 @@ class Trainer(object):
         return
 
     def time_left(self, epoch):
-        self.time_eval = self.time_epoch if self.time_eval == 0 else self.time_eval
+        self.time_eval = self.time_epoch / 7 if self.time_eval == 0 else self.time_eval
         time_left = (self.time_epoch + self.time_eval / self.validate_every
                      ) * (self.epoch_num - epoch)
         return time_left
@@ -213,7 +211,7 @@ class Trainer(object):
                     self.scheduler.step(epoch=epoch)
 
             if i % self.log_interval == 0:
-                tqdm.display(f"[{sys_info()}] {i}/{len(loader)} : "
+                tqdm.display(f"===> [{sys_info()}] {i}/{len(loader)} : "
                              f"Loss= {loss.item():.4f}", pos=1)
                 if self.writer:
                     n_example = (epoch * len(loader) + i) * loader.batch_size
@@ -221,7 +219,7 @@ class Trainer(object):
                         'Train/loss', loss.item(), n_example)
 
         self.time_epoch = time.time() - time_start
-        loss_epoch = losses.mean()
+        loss_epoch = losses.mean().item()
         if self.writer:
             if self.scheduler:
                 lr = self.scheduler.get_lr()
@@ -236,9 +234,9 @@ class Trainer(object):
             self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
             self.writer.add_scalar('Train/loss_variance', losses.var(), epoch)
             self.writer.flush()
-        print(f"===> Epoch {epoch} compete, remaining "
-              f"{sec_to_time(self.time_left(epoch))}, \tepoch_loss "
-              f"{loss_epoch:.4f}.")
+        tqdm.write(f"[{now()}] Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+                   f"time: {sec_to_time(self.time_epoch)}, remaining: "
+                   f"{sec_to_time(self.time_left(epoch))}.")
 
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
@@ -247,18 +245,16 @@ class Trainer(object):
         time_eval_start = time.time()
 
         with torch.no_grad():
-            _, metric, losses = self._process_many(dataset, eval_one)
+            _, metric, losses = self._process_many(dataset, eval_one, epoch)
 
         self.time_eval = time.time() - time_eval_start
-        metric['epoch_loss'] = losses.mean()
-        metric['loss_variance'] = losses.var()
+        metric['loss_variance'] = losses.var().item()
+        metric['epoch_loss'] = losses.mean().item()
         if self.writer:
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
-        Tqdm.write(
-            f"===> Eval  {epoch} compete, remaining "
-            f"{sec_to_time(self.time_left(epoch))}, \tepoch_loss: "
-            f"{metric['epoch_loss']:.4f}, variance: {metric['loss_variance']:.4f}")
+        info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
+        Tqdm.write(f"[{now()}] Eval compete, {', '.join(info)}")
 
         if self.save_after > epoch:
             return
@@ -293,7 +289,7 @@ class Trainer(object):
         return counters
 
     def _process_many(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
-                      func: Callable):
+                      func: Callable, epoch=None):
         if isinstance(dataset, DataSet):
             return func(dataset, '')
         counters, losses = list(), list()
@@ -308,22 +304,24 @@ class Trainer(object):
             counters.append(counter)
             losses.append(loss)
         metric = self.model.get_metric(counter=merge_dicts(counters))
-        print(f"[{now()}] All compete, "
-              f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
-        return counters, metric, torch.stack(losses)
+        if epoch is None:
+            Tqdm.write(f"[{now()}] All compete, "
+                       f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
+        return counters, metric, torch.cat(losses)
 
     def _process_one(self, one_set, name, device, batch_size, epoch=None):
         """ epoch is None means test stage.
         """
         loader = self.get_loader(one_set, batch_size)
-        losses = torch.zeros(len(loader), device=device)
+        len_loader = len(loader)
+        losses = torch.zeros(len_loader, device=device)
         desc = f"Test {name}" if epoch is None else f'Eval {name}'
-        tqdm = Tqdm(enumerate(loader), desc=desc, total=len(loader))
+        tqdm = Tqdm(enumerate(loader), desc=desc, total=len_loader)
         for i, batch in tqdm:
             losses[i] = self.model(**to_device(batch, device))['loss'].item()
             if i % self.log_interval == 0:
                 s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
-                tqdm.display(f"[{sys_info()}] {i}/{len(loader)} : " + s, pos=1)
+                tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
         metric_counter = copy.deepcopy(self.model.metric_counter)
         metric = self.model.get_metric(reset=True)
         if epoch is not None and self.writer is not None:
@@ -331,8 +329,8 @@ class Trainer(object):
             self.add_scalars('Detail', metric, epoch, name)
             self.writer.flush()
         elif epoch is None:
-            print(f"[{now()}] Test {name} compete, "
-                  f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
+            tqdm.write(f"[{now()}] Test {name} compete, "
+                       f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
         return metric_counter, metric, losses
 
     def checkpoint(self, epoch: int, comment: str = ''):
