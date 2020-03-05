@@ -1,17 +1,20 @@
-from typing import Any, List, Dict, Tuple
+"""
+Conllu dataset.
+"""
+
+from typing import Any, List, Dict
 import os
 import glob
 import random
 import logging
 from collections import OrderedDict, defaultdict
 from overrides import overrides
-from functools import reduce
 
 import torch
 from conllu import parse_incr
 
 from tjunlp.common.tqdm import Tqdm
-from tjunlp.core.dataset import DataSet, KIND_TRAIN, KIND_DEV, KIND_TEST
+from tjunlp.core.dataset import DataSet, KIND_TRAIN
 
 logger = logging.getLogger(__name__)
 
@@ -22,37 +25,17 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
 
 
 class ConlluDataset(DataSet):
-    """
-    ud v2.2. Marathi_UFAL 的dev，有许多词没有form只有lemma
-    """
     ud_keys = ('id', 'form', 'upostag', 'head', 'deprel')  # 暂时不用 'lemma'
     index_fields = ('words', 'upostag', 'deprel')
     max_len = 128
-    bad_dirs = {'UD_Arabic-NYUAD', 'UD_Japanese-BCCWJ'}  # 许可证原因，没有词
-    # miss_dirs = {  # 缺少验证集或者训练集
-    #     'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB', 'UD_Kazakh-KTB',
-    #     'UD_North_Sami-Giella', 'UD_Irish-IDT', 'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG',
-    #     'UD_Breton-KEB', 'UD_Thai-PUD', 'UD_Warlpiri-UFAL', 'UD_Armenian-ArmTDP',
-    #     'UD_Naija-NSC', 'UD_Kurmanji-MG', 'UD_Upper_Sorbian-UFAL', 'UD_Buryat-BDT',
-    #     'UD_Komi_Zyrian-Lattice', 'UD_Cantonese-HK', 'UD_Faroese-OFT'}
-    miss_dirs = {  # 只有测试集，12个
-        'UD_Komi_Zyrian-IKDP', 'UD_Amharic-ATT', 'UD_Yoruba-YTB',
-        'UD_Sanskrit-UFAL', 'UD_Tagalog-TRG', 'UD_Breton-KEB', 'UD_Thai-PUD',
-        'UD_Warlpiri-UFAL', 'UD_Naija-NSC', 'UD_Komi_Zyrian-Lattice',
-        'UD_Cantonese-HK', 'UD_Faroese-OFT'}
-    small_dirs = {  # 数据较少，训练集小于1700
-        'UD_Tamil-TTB', 'UD_Afrikaans-AfriBooms', 'UD_Belarusian-HSE',
-        'UD_Lithuanian-HSE', 'UD_Coptic-Scriptorium', 'UD_Uyghur-UDT',
-        'UD_Telugu-MTG', 'UD_Vietnamese-VTB', 'UD_Greek-GDT', 'UD_Marathi-UFAL',
-        'UD_Hungarian-Szeged', 'UD_Swedish_Sign_Language-SSLC'}
 
     def __init__(self,
                  data: str,
                  tokenizer: Any = None,
-                 lang: str = '',
+                 langs: list = None,
                  min_len: int = 2):
         super().__init__(data, tokenizer)
-        self.lang = lang
+        self.langs = langs
         self.min_len = min_len
         # self.use_language_specific_pos = use_language_specific_pos
         self.source2id = dict()
@@ -65,31 +48,32 @@ class ConlluDataset(DataSet):
               path: str,
               kind: str = KIND_TRAIN,
               tokenizer: Any = None,
-              lang: str = '',
-              min_len: int = 2) -> List:
+              langs: list = None,
+              min_len: int = 2):
         path = os.path.normpath(path)
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
-        dirs = cls.bad_dirs | cls.miss_dirs
-        if kind == KIND_TEST:
-            dirs = cls.bad_dirs
-        path = f"{path}/*{lang}*/*-ud-{kind}.conllu"
-        path_list = [os.path.normpath(f) for f in glob.glob(path)]
-        path_list = [p for p in path_list if p.split('/')[-2] not in dirs]
+        path_list = list()
+        for lang in langs:
+            path = f"{path}/*/{lang}_*ud-{kind}.conllu"
+            path_list.extend(glob.glob(path))
+
+        path_list = [os.path.normpath(p) for p in path_list]
 
         if kind == KIND_TRAIN:
-            dataset = cls([], tokenizer, lang, min_len)
+            dataset = cls([], tokenizer, langs, min_len)
             for path in Tqdm(path_list):
                 dataset.read_one(path)
             return dataset.stat(len(path_list) > 1)
-        dataset = defaultdict(lambda: cls([], tokenizer, lang, min_len))
+        dataset = defaultdict(lambda: cls([], tokenizer, None, min_len))
         for path in Tqdm(path_list):
-            lang = path.split('/')[-2].split('-')[0][3:]
+            lang = path.split('/')[-1].split('_')[0]
             dataset[lang].read_one(path)
+            dataset[lang].langs = [lang]
         return dict(dataset)
 
     def read_one(self, file_path: str) -> List:
-        lang = file_path.split('/')[-2].split('-')[0][3:]
+        lang = file_path.split('/')[-1].split('_')[0]
         if lang not in self.source2id:
             source_id = len(self.source2id)
             self.source2id[lang] = source_id
@@ -105,7 +89,7 @@ class ConlluDataset(DataSet):
 
     def _read(self, file_path: str, source_id: int = 0):
         total_num, droped_num, a, b = 0, 0, 0, 0
-        with open(file_path, "r") as conllu_file:
+        with open(file_path, mode="r", encoding="UTF-8") as conllu_file:
             for annotation in parse_incr(conllu_file):
                 # print(annotation)
                 annotation = [
