@@ -18,13 +18,13 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.config import Config
 from tjunlp.common.tqdm import Tqdm
-from tjunlp.common.util import sys_info, sec_to_time, merge_dicts
+from tjunlp.common.util import sys_info, sec_to_time, merge_dicts, output
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
 from tjunlp.core.vocabulary import Vocabulary
 from tjunlp.data import KIND_TRAIN, KIND_DEV, index_dataset
 
-EARLY_STOP_THRESHOLD = 5
+EARLY_STOP_THRESHOLD = 10
 
 SAVE_STRATEGY_NO = 'no'
 SAVE_STRATEGY_ALL = 'all'
@@ -130,7 +130,7 @@ class Trainer(object):
             DEVICE_CPU) if dev_on_cpu else self.device
         self.time_epoch = 0
         self.time_eval = 0
-        self.best_metric = None
+        self.best_metric, self.best_epoch = None, 0
         self.loss_record = {KIND_TRAIN: 0, KIND_DEV: 0}
         self.stop_counter = 0
 
@@ -148,12 +148,16 @@ class Trainer(object):
                 os.mkdir(self.log_dir)
             self.writer = SummaryWriter(log_dir=self.log_dir)
         else:
-            self.writer = None
+            self.writer, self.log_dir = None, None
 
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
 
         return
+
+    def format_metric(self, metric: Dict) -> str:
+        info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
+        return ', '.join(info)
 
     def time_left(self, epoch):
         self.time_eval = self.time_epoch / 7 if self.time_eval == 0 else self.time_eval
@@ -183,11 +187,13 @@ class Trainer(object):
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
                     self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
+                output(f"Early stoped! Best epoch: {self.best_epoch}, "
+                       f"{self.format_metric(self.best_metric)}")
                 break  # TODO 检查机制待完善
             epoch += 1
 
         time_train = time.time() - time_start
-        print(f'[{now()}] training compete, time: {sec_to_time(time_train)} .')
+        output(f'training compete, time: {sec_to_time(time_train)} .')
         if self.writer:
             self.writer.close()
 
@@ -195,7 +201,8 @@ class Trainer(object):
         losses = torch.zeros(len(loader), device=self.device)
         self.model.train_mode(self.device)
         tqdm = Tqdm(enumerate(loader),
-                    desc=f"Train epoch {epoch}", total=len(loader))
+                    desc=f"Train epoch {epoch}/ {self.epoch_num}",
+                    total=len(loader))
         time_start = time.time()
 
         for i, batch in tqdm:
@@ -253,25 +260,21 @@ class Trainer(object):
         if self.writer:
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
-        info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
-        Tqdm.write(f"[{now()}] Eval compete, {', '.join(info)}")
+        Tqdm.write(f"[{now()}] Eval compete, {self.format_metric(metric)}")
 
         if self.save_after > epoch:
             return
 
-        if self.save_strategy != SAVE_STRATEGY_BEST:
-            return
-
         if self.best_metric:
             if self.model.is_best(metric, self.best_metric):
-                self.best_metric = metric
-                self.checkpoint(epoch, 'best')
+                self.best_metric, self.best_epoch = metric, epoch
+                if self.save_strategy == SAVE_STRATEGY_BEST:
+                    self.checkpoint(epoch, comment='best')
                 self.stop_counter = 0
             elif metric['epoch_loss'] > self.best_metric['epoch_loss']:
                 self.stop_counter += 1
         else:
-            self.best_metric = metric
-            self.checkpoint(epoch, 'best')
+            self.best_metric, self.best_epoch = metric, epoch
             self.stop_counter = 0
         return
 
@@ -305,8 +308,7 @@ class Trainer(object):
             losses.append(loss)
         metric = self.model.get_metric(counter=merge_dicts(counters))
         if epoch is None:
-            Tqdm.write(f"[{now()}] All compete, "
-                       f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
+            Tqdm.write(f"[{now()}] All compete, {self.format_metric(metric)}")
         return counters, metric, torch.cat(losses)
 
     def _process_one(self, one_set, name, device, batch_size, epoch=None):
@@ -322,6 +324,7 @@ class Trainer(object):
             if i % self.log_interval == 0:
                 s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
                 tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
+
         metric_counter = copy.deepcopy(self.model.metric_counter)
         metric = self.model.get_metric(reset=True)
         if epoch is not None and self.writer is not None:
@@ -329,15 +332,22 @@ class Trainer(object):
             self.add_scalars('Detail', metric, epoch, name)
             self.writer.flush()
         elif epoch is None:
-            tqdm.write(f"[{now()}] Test {name} compete, "
-                       f"{', '.join([f'{k}: {v:.4f}' for k, v in metric.items()])}")
+            tqdm.write(
+                f"[{now()}] Test {name} compete, {self.format_metric(metric)}")
         return metric_counter, metric, losses
 
-    def checkpoint(self, epoch: int, comment: str = ''):
+    def checkpoint(self, epoch: int, comment: str = None):
+        """
+        if comment is not none, save path won't use epoch!
+        """
         self.reload_cfg()
 
-        path = os.path.normpath(
-            f"{self.save_dir}/{self.prefix}_{epoch}_{comment}.bac")
+        if comment is None:
+            path = os.path.normpath(
+                f"{self.save_dir}/{self.prefix}_{epoch}.bac")
+        else:
+            path = os.path.normpath(
+                f"{self.save_dir}/{self.prefix}_{comment}.bac")
 
         self.cfg['trainer']['pre_train_path'] = path
         self.cfg['trainer']['epoch_start'] = epoch + 1
@@ -353,7 +363,7 @@ class Trainer(object):
 
         torch.save(checkpoint, path)
         self.cfg.save()
-        print(f"[{now()}] Checkpoint saved to {path}")
+        output(f"Checkpoint saved at <{path}>")
 
     def load(self):
         checkpoint = torch.load(self.pre_train_path, map_location=self.device)
@@ -363,7 +373,7 @@ class Trainer(object):
             self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.log_dir = checkpoint['log_dir']
         self.writer = SummaryWriter(log_dir=self.log_dir)
-        print(f"[{now()}] Loaded checkpoint from {self.pre_train_path}")
+        output(f"Loaded checkpoint from <{self.pre_train_path}>")
         return self
 
     def add_scalars(self, main_tag: str, value_dict: Dict[str, Any],
