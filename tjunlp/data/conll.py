@@ -55,8 +55,8 @@ class ConlluDataset(DataSet):
             raise ValueError(f'"{path}" is not a dir!')
         path_list = list()
         for lang in langs:
-            path = f"{path}/*/{lang}_*ud-{kind}.conllu"
-            path_list.extend(glob.glob(path))
+            lang_path = f"{path}/*/{lang}_*ud-{kind}.conllu"
+            path_list.extend(glob.glob(lang_path))
 
         path_list = [os.path.normpath(p) for p in path_list]
 
