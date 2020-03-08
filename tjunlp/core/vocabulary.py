@@ -18,7 +18,7 @@ from tjunlp.common.tqdm import Tqdm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_NON_PADDED_fieldS = ("*tags", "*labels")
+DEFAULT_NON_PADDED_FIELDS = ("*tags", "*labels")
 DEFAULT_PADDING_TOKEN = "<pad>"
 DEFAULT_PADDING_INDEX = 0
 DEFAULT_OOV_TOKEN = "<unk>"
@@ -113,7 +113,7 @@ def _read_pretrained_tokens(embeddings_file_uri: str) -> List[str]:
                 tokens.append(token)
             else:
                 line_begin = line[:20] + '...' if len(line) > 20 else line
-                logger.warning(f'Skipping line number %d: %s',
+                logger.warning('Skipping line number %d: %s',
                                line_number, line_begin)
     return tokens
 
@@ -123,7 +123,7 @@ class Vocabulary(object):
                  counter: Dict[str, Dict[str, int]] = None,
                  min_count: Dict[str, int] = None,
                  max_vocab_size: Union[int, Dict[str, int]] = None,
-                 non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_fieldS,
+                 non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_FIELDS,
                  pretrained_files: Optional[Dict[str, str]] = None,
                  only_include_pretrained_words: bool = False,
                  tokens_to_add: Dict[str, List[str]] = None,
@@ -264,7 +264,7 @@ class Vocabulary(object):
                        create_fields: List[str],
                        min_count: Dict[str, int] = None,
                        max_vocab_size: Union[int, Dict[str, int]] = None,
-                       non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_fieldS,
+                       non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_FIELDS,
                        pretrained_files: Optional[Dict[str, str]] = None,
                        only_include_pretrained_words: bool = False,
                        tokens_to_add: Dict[str, List[str]] = None,
@@ -279,9 +279,7 @@ class Vocabulary(object):
         of what the other parameters do.
         """
         logger.info("Fitting token dictionary from dataset.")
-        # 下面这行代码有点东西
-        field_token_counts: Dict[str, Dict[str, int]
-                                 ] = defaultdict(lambda: defaultdict(int))
+        field_token_counts = defaultdict(lambda: defaultdict(int))
         if isinstance(instances, dict):
             if isinstance(instances['dev'], dict):
                 instances = chain(
@@ -310,7 +308,7 @@ class Vocabulary(object):
                 counter: Dict[str, Dict[str, int]] = None,
                 min_count: Dict[str, int] = None,
                 max_vocab_size: Union[int, Dict[str, int]] = None,
-                non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_fieldS,
+                non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_FIELDS,
                 pretrained_files: Optional[Dict[str, str]] = None,
                 only_include_pretrained_words: bool = False,
                 tokens_to_add: Dict[str, List[str]] = None,

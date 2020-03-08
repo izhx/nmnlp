@@ -171,13 +171,14 @@ class Trainer(object):
         return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle,
                           sampler=sampler, collate_fn=dataset.collate_fn)
 
-    def train(self):
+    def train(self)-> bool:
         train_loader = self.get_loader(
             self.dataset[KIND_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
 
+        run_flag = True  #  是否继续训练
         time_start = time.time()
         epoch = self.epoch_start
-        while epoch <= self.epoch_num:
+        while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
             self._train_once(epoch, train_loader, step)
             if self.validate_after < epoch and (epoch + 1) % self.validate_every == 0:
@@ -187,15 +188,16 @@ class Trainer(object):
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
                     self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
-                output(f"Early stoped! Best epoch: {self.best_epoch}, "
-                       f"{self.format_metric(self.best_metric)}")
-                break  # TODO 检查机制待完善
+                run_flag = False  #  检查机制待完善
             epoch += 1
 
         time_train = time.time() - time_start
         output(f'training compete, time: {sec_to_time(time_train)} .')
+        output(f"Best epoch: {self.best_epoch}, "
+               f"{self.format_metric(self.best_metric)}")
         if self.writer:
             self.writer.close()
+        return run_flag  # 若早停，返回false
 
     def _train_once(self, epoch: int, loader: DataLoader, step: bool = True):
         losses = torch.zeros(len(loader), device=self.device)
@@ -356,7 +358,8 @@ class Trainer(object):
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'log_dir': self.log_dir,
-            'cfg': self.cfg
+            'cfg': self.cfg,
+            'epoch': epoch
         }
         if self.scheduler:
             checkpoint['scheduler'] = self.scheduler.state_dict()
