@@ -220,8 +220,8 @@ class Trainer(object):
                     self.scheduler.step(epoch=epoch)
 
             if i % self.log_interval == 0:
-                tqdm.display(f"===> [{sys_info()}] {i}/{len(loader)} : "
-                             f"Loss= {loss.item():.4f}", pos=1)
+                # tqdm.display(f"===> [{sys_info()}] {i}/{len(loader)} : "
+                #              f"Loss= {loss.item():.4f}", pos=1)
                 if self.writer:
                     n_example = (epoch * len(loader) + i) * loader.batch_size
                     self.writer.add_scalar(
@@ -323,9 +323,9 @@ class Trainer(object):
         tqdm = Tqdm(enumerate(loader), desc=desc, total=len_loader)
         for i, batch in tqdm:
             losses[i] = self.model(**to_device(batch, device))['loss'].item()
-            if i % self.log_interval == 0:
-                s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
-                tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
+            # if i % self.log_interval == 0:
+            #     s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
+            #     tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
 
         metric_counter = copy.deepcopy(self.model.metric_counter)
         metric = self.model.get_metric(reset=True)
@@ -376,7 +376,8 @@ class Trainer(object):
             self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.log_dir = checkpoint['log_dir']
         self.writer = SummaryWriter(log_dir=self.log_dir)
-        output(f"Loaded checkpoint from <{self.pre_train_path}>")
+        output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
+               f"from <{self.pre_train_path}>")
         return self
 
     def add_scalars(self, main_tag: str, value_dict: Dict[str, Any],
