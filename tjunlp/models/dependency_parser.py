@@ -290,7 +290,7 @@ class DependencyParser(Model, GraphParser):
                     self.word_embedding.output_dim, transform_dim, activation=GELU(
                     )) for _ in range(word_embedding['layer_num'])])
                 self.word_transform = lambda x: [
-                    self.word_mlp[i](x[i]) for i in range(x.size(0))]
+                    self.word_mlp[i](x[i]) for i in range(len(x))]
             else:
                 self.word_mlp = NonLinear(self.word_embedding.output_dim,
                                           transform_dim, activation=GELU())

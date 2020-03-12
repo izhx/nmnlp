@@ -6,24 +6,11 @@ from typing import List, Union, Dict, Tuple
 import torch
 from transformers import BertModel, BertTokenizer
 
-_BERT_BASE_UNCASED = '/home/xps/Desktop/workspace/model_weight/bert-base-uncased/'
-_BERT_MULTILINGUAL = '/home/xps/Desktop/workspace/model_weight/bert-multilingual/'
 
 CLS = 101
 SEP = 102
 
 HIDDEN_STATES_INDEX = 2
-
-
-def get_pretrained(name_or_path: str, the_class: Union[BertModel, BertTokenizer]):
-    """
-    return pretrained bert model or tokenizer.
-    """
-    if name_or_path == 'bert_multi':
-        return the_class.from_pretrained(_BERT_MULTILINGUAL)
-    if name_or_path == 'bert':
-        return the_class.from_pretrained(_BERT_BASE_UNCASED)
-    return the_class.from_pretrained(name_or_path)
 
 
 class BertEmbedding(torch.nn.Module):
@@ -37,7 +24,7 @@ class BertEmbedding(torch.nn.Module):
                  layer_num: int = 1,  # 从最后一层开始，往前取几层
                  **kwargs):
         super().__init__()
-        self.bert = get_pretrained(name_or_path, BertModel)
+        self.bert = BertModel.from_pretrained(name_or_path)
         self.bert.encoder.output_hidden_states = True
         if freeze == 'all':
             for param in self.bert.parameters():

@@ -389,7 +389,7 @@ class Trainer(object):
     def reload_cfg(self):
         self.cfg = self.cfg.reload()
 
-        for key in ('epoch_num', 'validate_every', 'validate_after',
+        for key in ('epoch_num', 'validate_every', 'validate_after', 'prefix',
                     'save_after', 'save_strategy', 'log_batch', 'log_interval'):
             if key in self.cfg['trainer']:
                 self.__setattr__(key, self.cfg['trainer'][key])
