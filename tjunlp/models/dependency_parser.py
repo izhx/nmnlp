@@ -4,14 +4,12 @@
 
 from typing import Dict, List, Any
 from collections import defaultdict, OrderedDict
-from overrides import overrides
 import math
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 from ..core.model import Model
 from ..modules.embedding import build_word_embedding, DeepEmbedding
@@ -145,8 +143,7 @@ class GraphParser(object):
         :return heads: [batch, seq_len] 每个元素在树中对应的head(parent)预测结果
         """
         _, seq_len, _ = arc_matrix.shape
-        matrix = arc_matrix + \
-            torch.diag(arc_matrix.new(seq_len).fill_(-np.inf))
+        matrix = arc_matrix + torch.diag(arc_matrix.new(seq_len).fill_(-np.inf))
         flip_mask = mask.eq(False)
         matrix.masked_fill_(flip_mask.unsqueeze(1), -np.inf)
         _, heads = torch.max(matrix, dim=2)
@@ -210,9 +207,9 @@ class ScalarMix(torch.nn.Module):
         self.mixture_size = mixture_size
         self.do_layer_norm = do_layer_norm
 
-        self.scalar_parameters = nn.ParameterList(
-            [nn.Parameter(torch.FloatTensor([0.0])) for _ in range(mixture_size)])
-        self.gamma = nn.Parameter(torch.FloatTensor([1.0]))
+        self.scalar_parameters = nn.ParameterList([nn.Parameter(torch.tensor(
+            [0.0]), requires_grad=True) for _ in range(mixture_size)])
+        self.gamma = nn.Parameter(torch.tensor([1.0]), requires_grad=True)
 
     def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
                 mask: torch.Tensor = None) -> torch.Tensor:
@@ -235,7 +232,7 @@ class ScalarMix(torch.nn.Module):
             tensor_masked = tensor * broadcast_mask
             mean = torch.sum(tensor_masked) / num_elements_not_masked
             variance = torch.sum(
-                ((tensor_masked - mean) * broadcast_mask)**2) / num_elements_not_masked
+                ((tensor_masked - mean) * broadcast_mask) ** 2) / num_elements_not_masked
             return (tensor - mean) / torch.sqrt(variance + 1E-12)
 
         normed_weights = torch.nn.functional.softmax(torch.cat([parameter for parameter
@@ -325,8 +322,8 @@ class DependencyParser(Model, GraphParser):
 
         if use_mlp:
             self.mlp = nn.ModuleList([NonLinear(
-                feat_dim, arc_dim+label_dim, nn.LeakyReLU(0.1)), NonLinear(
-                    feat_dim, arc_dim+label_dim, nn.LeakyReLU(0.1))])
+                feat_dim, arc_dim + label_dim, nn.LeakyReLU(0.1)), NonLinear(
+                feat_dim, arc_dim + label_dim, nn.LeakyReLU(0.1))])
         else:
             self.mlp = None
             if encoder is None:
@@ -370,9 +367,9 @@ class DependencyParser(Model, GraphParser):
         if self.mlp is not None:
             feat = [self.word_dropout(self.mlp[i](feat)) for i in range(2)]
             feat = list(feat[0].split(self.split_sizes, dim=2)) + \
-                list(feat[1].split(self.split_sizes, dim=2))
+                   list(feat[1].split(self.split_sizes, dim=2))
         else:
-            feat = list(feat.split(self.split_sizes*2, dim=2))
+            feat = list(feat.split(self.split_sizes * 2, dim=2))
 
         arc_pred = self.arc_classifier(feat[0], feat[2]).squeeze(-1)  # (b,s,s)
         rel_pred = self.rel_classifier(feat[1], feat[3])  # (b,s,s,c)
@@ -390,20 +387,19 @@ class DependencyParser(Model, GraphParser):
             output['loss'] = loss
         if not self.training:
             with torch.no_grad():
-                output['metric'] = self.get_metric(
+                output['metric'] = self.get_metrics(
                     head_pred, rel_pred, head, deprel, mask)
 
         return output
 
-    @overrides
-    def get_metric(self,  # pylint:disable=arguments-differ
-                   head_pred: torch.Tensor = None,
-                   rel_pred: torch.Tensor = None,
-                   head_gt: torch.Tensor = None,
-                   rel_gt: torch.Tensor = None,
-                   mask: torch.Tensor = None,
-                   reset: bool = False,
-                   counter: OrderedDict = None) -> Dict[str, float]:
+    def get_metrics(self,  # pylint:disable=arguments-differ
+                    head_pred: torch.Tensor = None,
+                    rel_pred: torch.Tensor = None,
+                    head_gt: torch.Tensor = None,
+                    rel_gt: torch.Tensor = None,
+                    mask: torch.Tensor = None,
+                    reset: bool = False,
+                    counter: OrderedDict = None) -> Dict[str, float]:
         """
         Evaluate the performance of prediction.
         reset = False， 计数，返回单次结果， True 用计数计算并清空
@@ -425,7 +421,7 @@ class DependencyParser(Model, GraphParser):
         mask[:, 0] = 0  # mask out <root> tag
         head_pred_correct = (head_pred == head_gt).long() * mask
         rel_pred_correct = (
-            rel_pred == rel_gt).long() * head_pred_correct
+                                   rel_pred == rel_gt).long() * head_pred_correct
         arc = head_pred_correct.sum().item()
         rel = rel_pred_correct.sum().item()
         num = mask.sum().item()

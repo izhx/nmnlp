@@ -8,7 +8,6 @@ import glob
 import random
 import logging
 from collections import OrderedDict, defaultdict
-from overrides import overrides
 
 import torch
 from conllu import parse_incr
@@ -111,7 +110,7 @@ class ConlluDataset(DataSet):
                 else:
                     # Tqdm.write(annotation[1]['form'])
                     droped_num += 1
-            if b/a > 0.2:
+            if b / a > 0.2:
                 Tqdm.write(f"=========> {file_path} ????.'")
         return total_num, droped_num
 
@@ -125,10 +124,9 @@ class ConlluDataset(DataSet):
             print(f'===> Totally {t}, droped {d} one word instence.')
         t -= d
         self.percentage = {
-            k: float(v)/t for k, v in self.percentage.items()}
+            k: float(v) / t for k, v in self.percentage.items()}
         return self
 
-    @overrides
     def text_to_instance(self, annotation: List, source: str):
         fields = defaultdict(list)
         for x in annotation:

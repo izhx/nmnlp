@@ -308,7 +308,7 @@ class Trainer(object):
             counter, _, loss = func(one_set, name)
             counters.append(counter)
             losses.append(loss)
-        metric = self.model.get_metric(counter=merge_dicts(counters))
+        metric = self.model.get_metrics(counter=merge_dicts(counters))
         if epoch is None:
             Tqdm.write(f"[{now()}] All compete, {self.format_metric(metric)}")
         return counters, metric, torch.cat(losses)
@@ -328,7 +328,7 @@ class Trainer(object):
             #     tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
 
         metric_counter = copy.deepcopy(self.model.metric_counter)
-        metric = self.model.get_metric(reset=True)
+        metric = self.model.get_metrics(reset=True)
         if epoch is not None and self.writer is not None:
             metric['loss'] = losses.mean()
             self.add_scalars('Detail', metric, epoch, name)

@@ -127,7 +127,6 @@ class Vocabulary(object):
                  pretrained_files: Optional[Dict[str, str]] = None,
                  only_include_pretrained_words: bool = False,
                  tokens_to_add: Dict[str, List[str]] = None,
-                 min_pretrained_embeddings: Dict[str, int] = None,
                  padding_token: Optional[str] = DEFAULT_PADDING_TOKEN,
                  oov_token: Optional[str] = DEFAULT_OOV_TOKEN) -> None:
         self._padding_token = padding_token
@@ -147,8 +146,7 @@ class Vocabulary(object):
                      non_padded_fields,
                      pretrained_files,
                      only_include_pretrained_words,
-                     tokens_to_add,
-                     min_pretrained_embeddings)
+                     tokens_to_add)
 
     """
     A Vocabulary maps strings to integers, allowing for strings to be mapped to an
@@ -268,7 +266,6 @@ class Vocabulary(object):
                        pretrained_files: Optional[Dict[str, str]] = None,
                        only_include_pretrained_words: bool = False,
                        tokens_to_add: Dict[str, List[str]] = None,
-                       min_pretrained_embeddings: Dict[str, int] = None,
                        padding_token: Optional[str] = DEFAULT_PADDING_TOKEN,
                        oov_token: Optional[str] = DEFAULT_OOV_TOKEN
                        ) -> 'Vocabulary':
@@ -300,7 +297,6 @@ class Vocabulary(object):
                    pretrained_files=pretrained_files,
                    only_include_pretrained_words=only_include_pretrained_words,
                    tokens_to_add=tokens_to_add,
-                   min_pretrained_embeddings=min_pretrained_embeddings,
                    padding_token=padding_token,
                    oov_token=oov_token)
 
@@ -311,8 +307,7 @@ class Vocabulary(object):
                 non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_FIELDS,
                 pretrained_files: Optional[Dict[str, str]] = None,
                 only_include_pretrained_words: bool = False,
-                tokens_to_add: Dict[str, List[str]] = None,
-                min_pretrained_embeddings: Dict[str, int] = None) -> None:
+                tokens_to_add: Dict[str, List[str]] = None) -> None:
         """
         This method can be used for extending already generated vocabulary.
         It takes same parameters as Vocabulary initializer. The token_to_index
@@ -324,7 +319,6 @@ class Vocabulary(object):
             max_vocab_size = defaultdict(lambda: int_max_vocab_size)
         min_count = min_count or {}
         pretrained_files = pretrained_files or {}
-        min_pretrained_embeddings = min_pretrained_embeddings or {}
         non_padded_fields = set(non_padded_fields)
         counter = counter or {}
         tokens_to_add = tokens_to_add or {}
@@ -355,14 +349,8 @@ class Vocabulary(object):
             if field in pretrained_files:
                 pretrained_list = _read_pretrained_tokens(
                     pretrained_files[field])
-                min_embeddings = min_pretrained_embeddings.get(field, 0)
-                if min_embeddings > 0:
-                    tokens_old = tokens_to_add.get(field, [])
-                    tokens_new = pretrained_list[:min_embeddings]
-                    tokens_to_add[field] = tokens_old + tokens_new
-                elif min_embeddings == -1:  # add all pretrained
-                    tokens_old = tokens_to_add.get(field, [])
-                    tokens_to_add[field] = tokens_old + pretrained_list
+                tokens_old = tokens_to_add.get(field, [])
+                tokens_to_add[field] = tokens_old + pretrained_list
                 pretrained_set = set(pretrained_list)
             else:
                 pretrained_set = None
@@ -374,14 +362,24 @@ class Vocabulary(object):
                 max_vocab = None
             if max_vocab:
                 token_counts = token_counts[:max_vocab]
-            for token, count in token_counts:
-                if pretrained_set is not None:
-                    if only_include_pretrained_words:
-                        if token in pretrained_set and count >= min_count.get(field, 1):
-                            self.add_token_to_field(token, field)
-                    elif token in pretrained_set or count >= min_count.get(field, 1):
+            filed_min_count = min_count.get(field, 1)
+            if pretrained_set is None:
+                for token, count in token_counts:
+                    if count >= filed_min_count:
                         self.add_token_to_field(token, field)
-                elif count >= min_count.get(field, 1):
+            elif only_include_pretrained_words:
+                for token, count in token_counts:
+                    if token in pretrained_set and count >= filed_min_count:
+                        self.add_token_to_field(token, field)
+            else:  # 分成两个字典
+                field_pretrained = field + '_pretrained'
+                field_counter = {k: v for k, v in counter[field].items() if v > filed_min_count}
+                for token in pretrained_set:
+                    if token in field_counter:
+                        self.add_token_to_field(token, field)
+                        self.add_token_to_field(token, field_pretrained)
+                        field_counter.pop(token)
+                for token, count in field_counter.items():
                     self.add_token_to_field(token, field)
 
         for field, tokens in tokens_to_add.items():

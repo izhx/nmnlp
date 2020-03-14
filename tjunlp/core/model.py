@@ -5,7 +5,7 @@ import torch
 
 class Model(torch.nn.Module):
     """
-    Abstrat model class with more function.
+    Abstract model class with more function.
     """
 
     def __init__(self, criterion=None):
@@ -55,10 +55,11 @@ class Model(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def get_metric(self, reset=False, **kwargs) -> Dict[str, float]:
+    def get_metrics(self, reset=False, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
 
-    def is_best(self, metric: Dict[str, float], former: Dict[str, float]) -> bool:
+    @staticmethod
+    def is_best(metric: Dict[str, float], former: Dict[str, float]) -> bool:
         raise NotImplementedError
 
     def train_mode(self, device):
@@ -81,3 +82,7 @@ class Model(torch.nn.Module):
         self.to(device)
         self.evaluating = False
         return self.eval()
+
+    @classmethod
+    def from_archive(self, path):
+        pass  # TODO(izhx)
