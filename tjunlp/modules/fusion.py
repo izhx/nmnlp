@@ -15,11 +15,11 @@ class Fusion(nn.Module):
     def __init__(self, fusion_method: str = 'add', dim_or_size: int = -1):
         super().__init__()
         if fusion_method == 'cat':
-            self.func = lambda *inputs: torch.cat(inputs, dim=dim_or_size)
+            self.func = lambda *inputs: torch.cat(*inputs, dim=dim_or_size)
         elif fusion_method == 'mix':
             self.func = ScalarMix(dim_or_size)
         elif fusion_method == 'sum':
-            self.func = lambda *inputs: sum(inputs)
+            self.func = lambda *inputs: sum(*inputs)
         else:
             raise ValueError(f"Unsupported fusion method <{fusion_method}>!")
 

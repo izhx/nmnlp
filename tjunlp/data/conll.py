@@ -147,7 +147,6 @@ class ConlluDataset(DataSet):
                         pieces[i] = [self.tokenizer.vocab[p] for p in piece]
                 else:
                     tokens.append(word)
-            fields["word_pieces"] = pieces
         else:
             tokens = [word.lower() for word in words]
 
@@ -156,6 +155,7 @@ class ConlluDataset(DataSet):
                 fields['head'][i] = 0  # 指向虚根，在UD_Portuguese-Bosque等会有None
 
         fields["words"] = tokens
+        fields["word_pieces"] = pieces
         fields["metadata"] = {'len': len(annotation), 'source': source}
         return dict(fields)
 
