@@ -2,7 +2,7 @@
 Conllu dataset.
 """
 
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Set
 import os
 import glob
 import random
@@ -25,18 +25,18 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
 
 class ConlluDataset(DataSet):
     ud_keys = ('id', 'form', 'upostag', 'head', 'deprel')  # 暂时不用 'lemma'
-    index_fields = ('words', 'upostag', 'deprel')
+    index_fields = {'words', 'upostag', 'deprel'}
     max_len = 128
 
     def __init__(self,
-                 data: str,
+                 data: List,
                  tokenizer: Any = None,
                  langs: list = None,
-                 min_len: int = 2):
-        super().__init__(data, tokenizer)
+                 min_len: int = 2,
+                 pretrained_fields: Set[str] = ()):
+        super().__init__(data, tokenizer, pretrained_fields)
         self.langs = langs
         self.min_len = min_len
-        # self.use_language_specific_pos = use_language_specific_pos
         self.source2id = dict()
         self.percentage = defaultdict(int)
         self.counter = defaultdict(int)  # int() = 0
@@ -48,7 +48,8 @@ class ConlluDataset(DataSet):
               kind: str = KIND_TRAIN,
               tokenizer: Any = None,
               langs: list = None,
-              min_len: int = 2):
+              min_len: int = 2,
+              pretrained_fields: Set[str] = ()):
         path = os.path.normpath(path)
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
@@ -60,18 +61,18 @@ class ConlluDataset(DataSet):
         path_list = [os.path.normpath(p) for p in path_list]
 
         if kind == KIND_TRAIN:
-            dataset = cls([], tokenizer, langs, min_len)
+            dataset = cls([], tokenizer, langs, min_len, pretrained_fields)
             for path in Tqdm(path_list):
                 dataset.read_one(path)
             return dataset.stat(len(path_list) > 1)
-        dataset = defaultdict(lambda: cls([], tokenizer, None, min_len))
+        dataset = defaultdict(lambda: cls([], tokenizer, None, min_len, pretrained_fields))
         for path in Tqdm(path_list):
             lang = path.split('/')[-1].split('_')[0]
             dataset[lang].read_one(path)
             dataset[lang].langs = [lang]
         return dict(dataset)
 
-    def read_one(self, file_path: str) -> List:
+    def read_one(self, file_path: str) -> 'ConlluDataset':
         lang = file_path.split('/')[-1].split('_')[0]
         if lang not in self.source2id:
             source_id = len(self.source2id)
@@ -127,7 +128,7 @@ class ConlluDataset(DataSet):
             k: float(v) / t for k, v in self.percentage.items()}
         return self
 
-    def text_to_instance(self, annotation: List, source: str):
+    def text_to_instance(self, annotation: List, source: int):
         fields = defaultdict(list)
         for x in annotation:
             for k in self.ud_keys:
@@ -146,6 +147,7 @@ class ConlluDataset(DataSet):
                         pieces[i] = [self.tokenizer.vocab[p] for p in piece]
                 else:
                     tokens.append(word)
+            fields["word_pieces"] = pieces
         else:
             tokens = [word.lower() for word in words]
 
@@ -154,7 +156,6 @@ class ConlluDataset(DataSet):
                 fields['head'][i] = 0  # 指向虚根，在UD_Portuguese-Bosque等会有None
 
         fields["words"] = tokens
-        fields["word_pieces"] = pieces
         fields["metadata"] = {'len': len(annotation), 'source': source}
         return dict(fields)
 
@@ -175,6 +176,8 @@ class ConlluDataset(DataSet):
             result['sentences'].append(batch[origin]['form'])
             result['mask'][i, 1:seq_len] = True
             for key in ('words', 'upostag', 'deprel', 'head', 'id'):
+                result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
+            for _, key in self.pretrained_fields:
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
             for w, piece in batch[origin]['word_pieces'].items():
                 result['word_pieces'][(i, w)] = torch.LongTensor(piece)

@@ -1,5 +1,5 @@
 """
-Code from allennlp.
+Code modified from allennlp.
 
 A Vocabulary maps strings to integers, allowing for strings to be mapped to an
 out-of-vocabulary token.
@@ -12,9 +12,9 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 from itertools import chain
 
-from tjunlp.common.util import field_match
-from tjunlp.common.checks import ConfigurationError
-from tjunlp.common.tqdm import Tqdm
+from ..common.util import field_match
+from ..common.checks import ConfigurationError
+from ..common.tqdm import Tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ DEFAULT_PADDING_TOKEN = "<pad>"
 DEFAULT_PADDING_INDEX = 0
 DEFAULT_OOV_TOKEN = "<unk>"
 DEFAULT_OOV_INDEX = 1
+DEFAULT_FIELD = "tokens"
+
+PRETRAIN_POSTFIX = "_pretrained"
+KIND_TRAIN, KIND_DEV = 'train', 'dev'
 
 
 class _FieldDependentDefaultDict(defaultdict):
@@ -259,7 +263,7 @@ class Vocabulary(object):
     @classmethod
     def from_instances(cls,
                        instances,
-                       create_fields: List[str],
+                       create_fields: Set[str],
                        min_count: Dict[str, int] = None,
                        max_vocab_size: Union[int, Dict[str, int]] = None,
                        non_padded_fields: Iterable[str] = DEFAULT_NON_PADDED_FIELDS,
@@ -278,13 +282,13 @@ class Vocabulary(object):
         logger.info("Fitting token dictionary from dataset.")
         field_token_counts = defaultdict(lambda: defaultdict(int))
         if isinstance(instances, dict):
-            if isinstance(instances['dev'], dict):
+            if isinstance(instances[KIND_DEV], dict):
                 instances = chain(
-                    instances['train'], *instances['dev'].values())
-            elif isinstance(instances['dev'], list):
-                instances = chain(instances['train'], *instances['dev'])
+                    instances[KIND_TRAIN], *instances[KIND_DEV].values())
+            elif isinstance(instances[KIND_DEV], list):
+                instances = chain(instances[KIND_TRAIN], *instances[KIND_DEV])
             else:
-                instances = instances['train'] + instances['dev']
+                instances = instances[KIND_TRAIN] + instances[KIND_DEV]
         for instance in Tqdm(instances):
             for field in create_fields:
                 for token in instance[field]:
@@ -346,14 +350,6 @@ class Vocabulary(object):
         self._non_padded_fields.update(non_padded_fields)
 
         for field in counter:
-            if field in pretrained_files:
-                pretrained_list = _read_pretrained_tokens(
-                    pretrained_files[field])
-                tokens_old = tokens_to_add.get(field, [])
-                tokens_to_add[field] = tokens_old + pretrained_list
-                pretrained_set = set(pretrained_list)
-            else:
-                pretrained_set = None
             token_counts = list(counter[field].items())
             token_counts.sort(key=lambda x: x[1], reverse=True)
             try:
@@ -363,24 +359,27 @@ class Vocabulary(object):
             if max_vocab:
                 token_counts = token_counts[:max_vocab]
             filed_min_count = min_count.get(field, 1)
-            if pretrained_set is None:
+
+            if field in pretrained_files:
+                pretrained_set = set(_read_pretrained_tokens(pretrained_files[field]))
+                if only_include_pretrained_words:
+                    for token, count in token_counts:
+                        if token in pretrained_set and count >= filed_min_count:
+                            self.add_token_to_field(token, field)
+                else:  # 分成两个字典
+                    field_pretrained = field + PRETRAIN_POSTFIX
+                    field_counter = {k: v for k, v in counter[field].items() if v > filed_min_count}
+                    for token in pretrained_set:
+                        self.add_token_to_field(token, field)
+                        self.add_token_to_field(token, field_pretrained) # TODO 同时加入，pretrain就多了不少
+                        if token in field_counter:
+                            field_counter.pop(token)
+                    for token, count in field_counter.items():
+                        self.add_token_to_field(token, field)
+            else:
                 for token, count in token_counts:
                     if count >= filed_min_count:
                         self.add_token_to_field(token, field)
-            elif only_include_pretrained_words:
-                for token, count in token_counts:
-                    if token in pretrained_set and count >= filed_min_count:
-                        self.add_token_to_field(token, field)
-            else:  # 分成两个字典
-                field_pretrained = field + '_pretrained'
-                field_counter = {k: v for k, v in counter[field].items() if v > filed_min_count}
-                for token in pretrained_set:
-                    if token in field_counter:
-                        self.add_token_to_field(token, field)
-                        self.add_token_to_field(token, field_pretrained)
-                        field_counter.pop(token)
-                for token, count in field_counter.items():
-                    self.add_token_to_field(token, field)
 
         for field, tokens in tokens_to_add.items():
             for token in tokens:
@@ -395,7 +394,7 @@ class Vocabulary(object):
         """
         return self._index_to_token[field][0] == self._padding_token
 
-    def add_token_to_field(self, token: str, field: str = 'tokens') -> int:
+    def add_token_to_field(self, token: str, field: str = DEFAULT_FIELD) -> int:
         """
         Adds ``token`` to the index, if it is not already present.  Either way, we return the index of
         the token.
@@ -411,37 +410,37 @@ class Vocabulary(object):
         else:
             return self._token_to_index[field][token]
 
-    def add_tokens_to_field(self, tokens: List[str], field: str = 'tokens') -> List[int]:
+    def add_tokens_to_field(self, tokens: List[str], field: str = DEFAULT_FIELD) -> List[int]:
         """
         Adds ``tokens`` to the index, if they are not already present.  Either way, we return the
         indices of the tokens in the order that they were given.
         """
         return [self.add_token_to_field(token, field) for token in tokens]
 
-    def token_to_index(self, token: str, field: str = 'tokens') -> int:
+    def token_to_index(self, token: str, field: str = DEFAULT_FIELD) -> int:
         if token in self._token_to_index[field]:
             return self._token_to_index[field][token]
         else:
             try:
                 return self._token_to_index[field][self._oov_token]
             except KeyError:
-                logger.error('field: %s', field)
+                logger.error('Field: %s', field)
                 logger.error('Token: %s', token)
                 raise
 
-    def tokens_to_indices(self, tokens: List, field: str = 'tokens') -> List[int]:
+    def tokens_to_indices(self, tokens: List, field: str = DEFAULT_FIELD) -> List[int]:
         return [self.token_to_index(token, field) for token in tokens]
 
-    def index_to_token(self, index: int, field: str = 'tokens') -> str:
+    def index_to_token(self, index: int, field: str = DEFAULT_FIELD) -> str:
         return self._index_to_token[field][index]
 
-    def get_index_to_token_vocabulary(self, namespace: str = "tokens") -> Dict[int, str]:
+    def get_index_to_token_vocabulary(self, namespace: str = DEFAULT_FIELD) -> Dict[int, str]:
         return self._index_to_token[namespace]
 
-    def get_token_to_index_vocabulary(self, namespace: str = "tokens") -> Dict[str, int]:
+    def get_token_to_index_vocabulary(self, namespace: str = DEFAULT_FIELD) -> Dict[str, int]:
         return self._token_to_index[namespace]
 
-    def get_vocab_size(self, field: str = 'tokens') -> int:
+    def get_vocab_size(self, field: str = DEFAULT_FIELD) -> int:
         return len(self._token_to_index[field])
 
     def __eq__(self, other):
