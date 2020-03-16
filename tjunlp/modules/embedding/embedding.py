@@ -13,7 +13,7 @@ from torch.nn.functional import embedding
 
 from tjunlp.common.tqdm import Tqdm
 from tjunlp.common.checks import ConfigurationError
-from tjunlp.core.vocabulary import Vocabulary, DEFAULT_FIELD
+from tjunlp.core import Vocabulary
 from tjunlp.common.file_utils import get_file_extension
 from tjunlp.modules import util
 
@@ -121,7 +121,7 @@ class Embedding(torch.nn.Module):
     def from_pretrain(cls,
                       vocab: Vocabulary,
                       pretrained_file: str,
-                      vocab_namespace: str = DEFAULT_FIELD,
+                      vocab_namespace: str,
                       padding_index: int = 0,
                       trainable: bool = False,
                       max_norm: float = None,

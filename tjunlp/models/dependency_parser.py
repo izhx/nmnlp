@@ -11,11 +11,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..core.model import Model
+from ..core import Model, Vocabulary
 from ..modules.embedding import build_word_embedding, DeepEmbedding
+from ..modules.encoder import build_encoder
+from ..modules.fusion import Fusion
 from ..modules.dropout import WordDropout
 from ..modules.linear import NonLinear, Bilinear
-from ..modules.encoder import build_encoder
 from ..modules.util import initial_parameter
 
 
@@ -192,72 +193,6 @@ class GELU(nn.Module):
         return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
 
 
-class ScalarMix(torch.nn.Module):
-    """
-    Computes a parameterised scalar mixture of N tensors, ``mixture = gamma * sum(s_k * tensor_k)``
-    where ``s = softmax(w)``, with ``w`` and ``gamma`` scalar parameters.
-
-    In addition, if ``do_layer_norm=True`` then apply layer normalization to each tensor
-    before weighting.
-    """
-
-    def __init__(self, mixture_size: int, do_layer_norm: bool = False) -> None:
-        super(ScalarMix, self).__init__()
-
-        self.mixture_size = mixture_size
-        self.do_layer_norm = do_layer_norm
-
-        self.scalar_parameters = nn.ParameterList([nn.Parameter(torch.tensor(
-            [0.0]), requires_grad=True) for _ in range(mixture_size)])
-        self.gamma = nn.Parameter(torch.tensor([1.0]), requires_grad=True)
-
-    def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
-                mask: torch.Tensor = None) -> torch.Tensor:
-        """
-        Compute a weighted average of the ``tensors``.  The input tensors an be any shape
-        with at least two dimensions, but must all be the same shape.
-
-        When ``do_layer_norm=True``, the ``mask`` is required input.  If the ``tensors`` are
-        dimensioned  ``(dim_0, ..., dim_{n-1}, dim_n)``, then the ``mask`` is dimensioned
-        ``(dim_0, ..., dim_{n-1})``, as in the typical case with ``tensors`` of shape
-        ``(batch_size, timesteps, dim)`` and ``mask`` of shape ``(batch_size, timesteps)``.
-
-        When ``do_layer_norm=False`` the ``mask`` is ignored.
-        """
-        if len(tensors) != self.mixture_size:
-            raise Exception("{} tensors were passed, but the module was initialized to "
-                            "mix {} tensors.".format(len(tensors), self.mixture_size))
-
-        def _do_layer_norm(tensor, broadcast_mask, num_elements_not_masked):
-            tensor_masked = tensor * broadcast_mask
-            mean = torch.sum(tensor_masked) / num_elements_not_masked
-            variance = torch.sum(
-                ((tensor_masked - mean) * broadcast_mask) ** 2) / num_elements_not_masked
-            return (tensor - mean) / torch.sqrt(variance + 1E-12)
-
-        normed_weights = torch.nn.functional.softmax(torch.cat([parameter for parameter
-                                                                in self.scalar_parameters]), dim=0)
-        normed_weights = torch.split(normed_weights, split_size_or_sections=1)
-
-        if not self.do_layer_norm:
-            pieces = []
-            for weight, tensor in zip(normed_weights, tensors):
-                pieces.append(weight * tensor)
-            return self.gamma * sum(pieces)
-
-        else:
-            mask_float = mask.float()
-            broadcast_mask = mask_float.unsqueeze(-1)
-            input_dim = tensors[0].size(-1)
-            num_elements_not_masked = torch.sum(mask_float) * input_dim
-
-            pieces = []
-            for weight, tensor in zip(normed_weights, tensors):
-                pieces.append(weight * _do_layer_norm(tensor,
-                                                      broadcast_mask, num_elements_not_masked))
-            return self.gamma * sum(pieces)
-
-
 class DependencyParser(Model, GraphParser):
     """
     主Parser，可更换不同的embedding和encoder。
@@ -265,9 +200,7 @@ class DependencyParser(Model, GraphParser):
 
     def __init__(self,
                  criterion,
-                 num_words: int,
-                 num_rel: int,
-                 num_upos: int,
+                 vocab: Vocabulary,
                  word_embedding: Dict[str, Any],
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
@@ -279,8 +212,7 @@ class DependencyParser(Model, GraphParser):
                  greedy_infer: bool = False,
                  **kwargs):
         super().__init__(criterion)
-        self.word_embedding = build_word_embedding(
-            **word_embedding, num_embeddings=num_words)
+        self.word_embedding = build_word_embedding(vocab=vocab, **word_embedding)
         if transform_dim > 0:
             if 'layer_num' in word_embedding and word_embedding['layer_num'] > 1:
                 self.word_mlp = nn.ModuleList([NonLinear(
@@ -298,17 +230,15 @@ class DependencyParser(Model, GraphParser):
             self.word_mlp = None
             self.word_transform = lambda x: x
 
-        if 'feature_fusion' in kwargs:  # 多层融合方式
-            if kwargs['feature_fusion'] == 'cat':
-                self.fusion = lambda x: torch.cat(x, -1)
-                feat_dim *= word_embedding['layer_num']
-            else:
-                self.fusion = ScalarMix(word_embedding['layer_num'])
-        else:
-            self.fusion = None
+        try:  # bert 多层融合方式
+            method = kwargs['layer_fusion']
+            self.fusion = Fusion(method, word_embedding['layer_num'] if method == 'mix' else -1)
+            feat_dim *= word_embedding['layer_num'] if method == 'cat' else 1
+        except:
+            self.fusion = lambda x: x
 
         if other_embedding is not None:
-            self.other_embedding = DeepEmbedding(num_upos, **other_embedding)
+            self.other_embedding = DeepEmbedding(len(vocab['upostag']), **other_embedding)
             feat_dim += self.other_embedding.output_dim
         else:
             self.other_embedding = None
@@ -335,7 +265,7 @@ class DependencyParser(Model, GraphParser):
         self.word_dropout = WordDropout(dropout)
 
         self.arc_classifier = Bilinear(arc_dim, arc_dim, 1)
-        self.rel_classifier = Bilinear(label_dim, label_dim, num_rel)
+        self.rel_classifier = Bilinear(label_dim, label_dim, len(vocab['deprel']))
         self.decoder = lambda x, y: self.decode(x, y, greedy_infer)
         self.split_sizes = [arc_dim, label_dim]
         # for calculate metrics precisely
@@ -350,8 +280,7 @@ class DependencyParser(Model, GraphParser):
                 **kwargs) -> Dict[str, Any]:
         feat = self.word_embedding(words, **kwargs)
         feat = self.word_transform(feat)
-        if self.fusion is not None:
-            feat = self.fusion(feat)
+        feat = self.fusion(feat)
 
         if self.other_embedding is not None:
             upostag = self.other_embedding(upostag, **kwargs)

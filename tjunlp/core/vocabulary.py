@@ -371,7 +371,7 @@ class Vocabulary(object):
                     field_counter = {k: v for k, v in counter[field].items() if v > filed_min_count}
                     for token in pretrained_set:
                         self.add_token_to_field(token, field)
-                        self.add_token_to_field(token, field_pretrained) # TODO 同时加入，pretrain就多了不少
+                        self.add_token_to_field(token, field_pretrained)
                         if token in field_counter:
                             field_counter.pop(token)
                     for token, count in field_counter.items():
