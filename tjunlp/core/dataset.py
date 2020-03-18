@@ -3,6 +3,7 @@ Dataset Abstract class
 """
 
 from typing import Iterable, Dict, Tuple, List, Set, Any
+import itertools
 
 from torch.utils.data import Dataset, ConcatDataset
 
@@ -22,7 +23,7 @@ class DataSet(Dataset):
                  pretrained_fields: Set[str] = (), in_memory: bool = True):
         self.data = data
         self.tokenizer = tokenizer
-        self.pretrained_fields = {(k, k + PRETRAIN_POSTFIX) for k in pretrained_fields}
+        self.pretrained_fields = {k + PRETRAIN_POSTFIX for k in pretrained_fields}
         self.in_memory = in_memory  # 完成数据不在内存的代码
         self.indexed = False
 
@@ -63,8 +64,6 @@ class DataSet(Dataset):
             self.indexed = True
 
     def instance_to_index(self, instance, vocab: Vocabulary) -> Any:
-        for key in self.index_fields:
+        for key in itertools.chain(self.index_fields, self.pretrained_fields):
             instance[key] = vocab.tokens_to_indices(instance[key], key)
-        for key, tar in self.pretrained_fields:
-            instance[tar] = vocab.tokens_to_indices(instance[key], tar)
         return instance
