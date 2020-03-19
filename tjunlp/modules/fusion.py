@@ -1,7 +1,7 @@
 """
 Feature fusion class.
 """
-from typing import List, Any
+from typing import List, Tuple, Union, Any
 
 import torch
 import torch.nn as nn
@@ -12,19 +12,22 @@ class Fusion(nn.Module):
     Module for fusing multiple tensors.
     """
 
-    def __init__(self, fusion_method: str = 'add', dim_or_size: int = -1):
+    def __init__(self, fusion_method: str = 'add', dim_or_size: int = -1,
+                 **kwargs) -> None:
         super().__init__()
         if fusion_method == 'cat':
-            self.func = lambda *inputs: torch.cat(*inputs, dim=dim_or_size)
+            self.func = lambda tensors, _: torch.cat(tensors, dim=dim_or_size)
         elif fusion_method == 'mix':
-            self.func = ScalarMix(dim_or_size)
+            self.mix = ScalarMix(dim_or_size, **kwargs)
+            self.func = lambda tensors, kws: self.mix(tensors, **kws)
         elif fusion_method == 'sum':
-            self.func = lambda *inputs: sum(*inputs)
+            self.func = lambda tensors, _: sum(tensors)
         else:
             raise ValueError(f"Unsupported fusion method <{fusion_method}>!")
 
-    def forward(self, *inputs: Any) -> torch.Tensor:
-        return self.func(*inputs)
+    def forward(self, tensors: Union[List[torch.Tensor], Tuple[torch.Tensor]],
+                **kwargs: Any) -> torch.Tensor:
+        return self.func(tensors, kwargs)
 
 
 class ScalarMix(torch.nn.Module):

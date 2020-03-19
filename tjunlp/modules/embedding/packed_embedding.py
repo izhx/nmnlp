@@ -81,5 +81,5 @@ class PreTrainEmbedding(torch.nn.Module):
     def forward(self, input_ids: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         embedding_trainable = self.trainable(input_ids)
         embedding_pretrained = self.pretrained(kwargs[self.key_pretrained])
-        embedding = self.fusion(embedding_trainable, embedding_pretrained)
+        embedding = self.fusion((embedding_trainable, embedding_pretrained))
         return embedding

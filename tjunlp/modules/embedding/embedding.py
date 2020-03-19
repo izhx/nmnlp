@@ -207,8 +207,7 @@ class Embedding(torch.nn.Module):
             else:
                 logger.debug("Token %s was not found in the embedding file. Initialising randomly.", token)
 
-        output("Pretrained embeddings were found for %d out of %d tokens",
-               num_tokens_found, vocab_size)
+        output(f"Pretrained embeddings were found for {num_tokens_found} out of {vocab_size} tokens")
 
         return cls(num_embeddings=embedding_matrix.size(0),
                    embedding_dim=embedding_matrix.size(1),
