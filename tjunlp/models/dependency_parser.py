@@ -110,7 +110,7 @@ class DependencyParser(Model):
         self.arc_classifier = Bilinear(arc_dim, arc_dim, 1)
         self.rel_classifier = Bilinear(label_dim, label_dim, len(vocab['deprel']))
         if greedy_infer:
-            self.decoder = lambda x, y: x.max(2)[1]
+            self.decoder = lambda x, y: x.max(dim=2)[1]
         else:
             self.decoder = batch_decode_head
         self.split_sizes = [arc_dim, label_dim]

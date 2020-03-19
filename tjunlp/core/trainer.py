@@ -173,12 +173,13 @@ class Trainer(object):
         if self.log_interval == 0:  # auto interval
             self.log_interval = len(train_loader) // 100
         run_flag = True  # 是否继续训练
-        time_start = time.time()
         epoch = self.epoch_start
+        output("Training started...")
+        time_start = time.time()
         while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
             self._train_once(epoch, train_loader, step)
-            if self.validate_after < epoch and (epoch + 1) % self.validate_every == 0:
+            if self.validate_after <= epoch and (epoch + 1) % self.validate_every == 0:
                 self._eval_once(epoch, self.dataset[KIND_DEV])
             self.reload_cfg()
             if self.save_strategy != SAVE_STRATEGY_NO:

@@ -65,13 +65,12 @@ def param_groups_with_different_lr(model: Model,
     groups[KEY_OTHER] = {KEY_PARAMS: list(), KEY_LR: default_lr, KEY_NAME: KEY_OTHER}
 
     for name, param in model.named_parameters():
-        if param.requires_grad:
-            for k in kwargs:
-                if k in name:
-                    groups[k][KEY_PARAMS].append(param)
-                    break
-            else:
-                groups[KEY_OTHER][KEY_PARAMS].append(param)
+        for k in kwargs:
+            if k in name:
+                groups[k][KEY_PARAMS].append(param)
+                break
+        else:
+            groups[KEY_OTHER][KEY_PARAMS].append(param)
 
     return list(groups.values())
 

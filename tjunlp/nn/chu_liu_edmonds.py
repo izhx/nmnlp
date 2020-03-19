@@ -7,9 +7,63 @@ import torch
 
 
 def batch_decode_head(energy: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
-    heads = torch.zeros(*energy.shape[:-1], dtype=torch.int)
+    device = energy.device
+    heads = torch.zeros(energy.shape[:-1], dtype=torch.long)
+    energy[:, 0, :] = 0
+    energy = energy.transpose(1, 2).detach().cpu().numpy()
     for i, (e, l) in enumerate(zip(energy, lengths)):
-        heads[i][:l], _ = decode_mst(e, l, False)
+        heads[i] = torch.from_numpy(decode_head(e, l))
+    heads[:, 0] = 0
+    return heads.to(device)
+
+
+def decode_head(score_matrix: numpy.ndarray, length: int) -> numpy.ndarray:
+    """
+    Note: Counter to typical intuition, this function decodes the _maximum_
+    spanning tree.
+    Decode the optimal MST tree with the Chu-Liu-Edmonds algorithm for
+    maximum spanning arborescences on graphs.
+    # Parameters
+    score_matrix : `numpy.ndarray`, required.
+        A tensor with shape (timesteps, timesteps) containing the energy of each edge.
+    length : `int`, required.
+        The length of this sequence, as the energy may have come from a padded batch.
+    """
+    if score_matrix.ndim != 2:
+        raise ValueError("The dimension of the energy array is not equal to 2.")
+    max_length = score_matrix.shape[-1]
+
+    # Our energy matrix might have been batched -
+    # here we clip it to contain only non padded tokens.
+    score_matrix = score_matrix[:length, :length]
+    old_input = numpy.zeros([length, length], dtype=numpy.int32)
+    old_output = numpy.zeros([length, length], dtype=numpy.int32)
+    current_nodes = [True for _ in range(length)]
+    representatives: List[Set[int]] = []
+
+    for node1 in range(length):
+        score_matrix[node1, node1] = 0.0
+        representatives.append({node1})
+
+        for node2 in range(node1 + 1, length):
+            old_input[node1, node2] = node1
+            old_output[node1, node2] = node2
+
+            old_input[node2, node1] = node2
+            old_output[node2, node1] = node1
+
+    final_edges: Dict[int, int] = {}
+
+    # The main algorithm operates inplace.
+    chu_liu_edmonds(
+        length, score_matrix, current_nodes, final_edges, old_input, old_output, representatives
+    )
+
+    heads = numpy.zeros([max_length], numpy.int32)
+
+    for child, parent in final_edges.items():
+        heads[child] = parent
+
     return heads
 
 
@@ -160,9 +214,7 @@ def chu_liu_edmonds(
     # From here until the recursive call is the contraction stage of the algorithm.
     cycle_weight = 0.0
     # Find the weight of the cycle.
-    index = 0
     for node in cycle:
-        index += 1
         cycle_weight += score_matrix[parents[node], node]
 
     # For each node in the graph, find the maximum weight incoming
