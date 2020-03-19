@@ -76,7 +76,8 @@ class Embedding(torch.nn.Module):
                  max_norm: float = None,
                  norm_type: float = 2.,
                  scale_grad_by_freq: bool = False,
-                 sparse: bool = False) -> None:
+                 sparse: bool = False,
+                 **kwargs: Any) -> None:
         super(Embedding, self).__init__()
         self.num_embeddings = num_embeddings
         self.padding_index = padding_index

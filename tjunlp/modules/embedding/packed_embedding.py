@@ -60,7 +60,8 @@ class PreTrainEmbedding(torch.nn.Module):
                  max_norm: float = None,
                  norm_type: float = 2.,
                  scale_grad_by_freq: bool = False,
-                 sparse: bool = False):
+                 sparse: bool = False,
+                 **kwargs: Any):
         super().__init__()
         self.key_pretrained = vocab_namespace + PRETRAIN_POSTFIX
         self.output_dim = embedding_dim * (2 if fusion_method == 'cat' else 1)

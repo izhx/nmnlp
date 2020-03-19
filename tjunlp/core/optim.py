@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List, Tuple, Any
 
 import torch
 from torch.optim import Adam, SGD
@@ -8,6 +8,7 @@ from torch.optim import lr_scheduler
 from transformers import AdamW as BertAdamW
 
 from tjunlp.common.checks import ConfigurationError
+from .model import Model
 
 _OPTIMIZER = {
     'Adam': Adam,
@@ -26,6 +27,8 @@ _SCHEDULER = {
     'CosineAnnealingWarmRestarts': lr_scheduler.CosineAnnealingWarmRestarts,
     # 'OneCycleLR':
 }
+
+KEY_NAME, KEY_LR, KEY_PARAMS, KEY_OTHER = 'name', 'lr', 'params', 'other'
 
 
 def require_grads_param(params):
@@ -50,3 +53,32 @@ def build_lr_scheduler(optimizer, name: str, **kwargs):
         return _SCHEDULER[name](optimizer, **kwargs)
     else:
         raise ConfigurationError(f'Wrong lr scheduler name: {name} !')
+
+
+def param_groups_with_different_lr(model: Model,
+                                   default_lr: float,
+                                   **kwargs: float) -> List[Dict]:
+    """
+    get param groups by keyword.
+    """
+    groups = {k: {KEY_PARAMS: list(), KEY_LR: kwargs[k], KEY_NAME: k} for k in kwargs}
+    groups[KEY_OTHER] = {KEY_PARAMS: list(), KEY_LR: default_lr, KEY_NAME: KEY_OTHER}
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            for k in kwargs:
+                if k in name:
+                    groups[k][KEY_PARAMS].append(param)
+                    break
+            else:
+                groups[KEY_OTHER][KEY_PARAMS].append(param)
+
+    return list(groups.values())
+
+
+def get_lrs(optimizer) -> Tuple[str, float]:
+    for param_dict in optimizer.param_groups:
+        if KEY_NAME in param_dict:
+            yield f"{KEY_LR}_{param_dict[KEY_NAME]}", param_dict[KEY_LR]
+        else:
+            yield KEY_LR, param_dict[KEY_LR]

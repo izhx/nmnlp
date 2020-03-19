@@ -212,7 +212,8 @@ class DependencyParser(Model, GraphParser):
                  greedy_infer: bool = False,
                  **kwargs):
         super().__init__(criterion)
-        self.word_embedding = build_word_embedding(vocab=vocab, **word_embedding)
+        self.word_embedding = build_word_embedding(
+            num_embeddings=len(vocab['words']), vocab=vocab, **word_embedding)
         if transform_dim > 0:
             if 'layer_num' in word_embedding and word_embedding['layer_num'] > 1:
                 self.word_mlp = nn.ModuleList([NonLinear(

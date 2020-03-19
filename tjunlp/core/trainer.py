@@ -21,6 +21,7 @@ from tjunlp.common.tqdm import Tqdm
 from tjunlp.common.util import sys_info, sec_to_time, merge_dicts, output
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
+from tjunlp.core.optim import get_lrs
 from tjunlp.core.vocabulary import Vocabulary
 from tjunlp.data import KIND_TRAIN, KIND_DEV, index_dataset
 
@@ -94,7 +95,7 @@ class Trainer(object):
                  tensorboard: bool = False,
                  log_batch: bool = False,
                  log_dir: str = DEFAULT_LOG_DIR,
-                 log_interval: int = 10,
+                 log_interval: int = 0,
                  dev_on_cpu: bool = False,
                  prefix: str = DEFAULT_PREFIX,
                  pre_train_path: str = None,
@@ -142,7 +143,7 @@ class Trainer(object):
             else:
                 if not os.path.exists(os.path.abspath(log_dir)):
                     os.mkdir(log_dir)
-                self.log_dir = f"{log_dir}/{prefix + now()[:-3].replace(' ', '_')}"
+                self.log_dir = f"{log_dir}/{prefix}_{now()[:-3].replace(' ', '_')}"
                 if os.path.exists(self.log_dir):
                     shutil.rmtree(self.log_dir)
                 os.mkdir(self.log_dir)
@@ -171,11 +172,12 @@ class Trainer(object):
         return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle,
                           sampler=sampler, collate_fn=dataset.collate_fn)
 
-    def train(self)-> bool:
+    def train(self) -> bool:
         train_loader = self.get_loader(
             self.dataset[KIND_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
-
-        run_flag = True  #  是否继续训练
+        if self.log_interval == 0:  # auto interval
+            self.log_interval = len(train_loader) // 100
+        run_flag = True  # 是否继续训练
         time_start = time.time()
         epoch = self.epoch_start
         while epoch <= self.epoch_num and run_flag:
@@ -188,7 +190,7 @@ class Trainer(object):
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
                     self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
-                run_flag = False  #  检查机制待完善
+                run_flag = False  # 检查机制待完善
             epoch += 1
 
         time_train = time.time() - time_start
@@ -202,12 +204,12 @@ class Trainer(object):
     def _train_once(self, epoch: int, loader: DataLoader, step: bool = True):
         losses = torch.zeros(len(loader), device=self.device)
         self.model.train_mode(self.device)
-        tqdm = Tqdm(enumerate(loader),
-                    desc=f"Train epoch {epoch}/ {self.epoch_num}",
-                    total=len(loader))
+        # tqdm = Tqdm(enumerate(loader),
+        #             desc=f"Train epoch {epoch}/ {self.epoch_num}",
+        #             total=len(loader))
         time_start = time.time()
 
-        for i, batch in tqdm:
+        for i, batch in enumerate(loader):
             loss = self.model(**to_device(batch, self.device))['loss']
             losses[i] = loss.item()
             (loss / self.update_every).backward()  # gradient accumulation
@@ -230,26 +232,18 @@ class Trainer(object):
         self.time_epoch = time.time() - time_start
         loss_epoch = losses.mean().item()
         if self.writer:
-            if self.scheduler:
-                lr = self.scheduler.get_lr()
-            else:
-                lr = self.optimizer.param_groups[0]['lr']
-            if isinstance(lr, List) and len(lr) == 1:
-                self.writer.add_scalar('Train/learning_rate', lr[0], epoch)
-            elif isinstance(lr, float):
-                self.writer.add_scalar('Train/learning_rate', lr, epoch)
-            else:
-                raise NotImplementedError("我还没想咋写")
-            self.writer.add_scalar('Train/epoch_loss', loss_epoch, epoch)
-            self.writer.add_scalar('Train/loss_variance', losses.var(), epoch)
-            self.writer.flush()
-        tqdm.write(f"[{now()}] Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
-                   f"time: {sec_to_time(self.time_epoch)}, remaining: "
-                   f"{sec_to_time(self.time_left(epoch))}.")
+            scalars = dict(get_lrs(self.optimizer))
+            scalars['epoch_loss'] = loss_epoch
+            scalars['loss_variance'] = losses.var()
+            self.add_scalars('Train', scalars, epoch)
+        print(f"[{now()}] Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+              f"time: {sec_to_time(self.time_epoch)}, remaining: "
+              f"{sec_to_time(self.time_left(epoch))}.")
 
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
             return self._process_one(one_set, name, self.dev_device, self.batch_size, epoch)
+
         self.model.eval_mode(self.dev_device)
         time_eval_start = time.time()
 
@@ -262,7 +256,7 @@ class Trainer(object):
         if self.writer:
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
-        Tqdm.write(f"[{now()}] Eval compete, {self.format_metric(metric)}")
+        print(f"[{now()}] Eval compete, {self.format_metric(metric)}")
 
         if self.save_after > epoch:
             return
@@ -310,7 +304,7 @@ class Trainer(object):
             losses.append(loss)
         metric = self.model.get_metrics(counter=merge_dicts(counters))
         if epoch is None:
-            Tqdm.write(f"[{now()}] All compete, {self.format_metric(metric)}")
+            print(f"[{now()}] All compete, {self.format_metric(metric)}")
         return counters, metric, torch.cat(losses)
 
     def _process_one(self, one_set, name, device, batch_size, epoch=None):
@@ -319,9 +313,9 @@ class Trainer(object):
         loader = self.get_loader(one_set, batch_size)
         len_loader = len(loader)
         losses = torch.zeros(len_loader, device=device)
-        desc = f"Test {name}" if epoch is None else f'Eval {name}'
-        tqdm = Tqdm(enumerate(loader), desc=desc, total=len_loader)
-        for i, batch in tqdm:
+        # desc = f"Test {name}" if epoch is None else f'Eval {name}'
+        # tqdm = Tqdm(enumerate(loader), desc=desc, total=len_loader)
+        for i, batch in enumerate(loader):
             losses[i] = self.model(**to_device(batch, device))['loss'].item()
             # if i % self.log_interval == 0:
             #     s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
@@ -331,10 +325,10 @@ class Trainer(object):
         metric = self.model.get_metrics(reset=True)
         if epoch is not None and self.writer is not None:
             metric['loss'] = losses.mean()
-            self.add_scalars('Detail', metric, epoch, name)
+            self.add_scalars('Very_Detail', metric, epoch, name)
             self.writer.flush()
         elif epoch is None:
-            tqdm.write(
+            print(
                 f"[{now()}] Test {name} compete, {self.format_metric(metric)}")
         return metric_counter, metric, losses
 
@@ -385,6 +379,7 @@ class Trainer(object):
         for key, value in value_dict.items():
             key = f'{key_prefix}_{key}' if key_prefix else key
             self.writer.add_scalar(f"{main_tag}/{key}", value, global_step)
+        self.writer.flush()
 
     def reload_cfg(self):
         self.cfg = self.cfg.reload()
