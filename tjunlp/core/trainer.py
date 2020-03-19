@@ -17,7 +17,6 @@ from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.config import Config
-from tjunlp.common.tqdm import Tqdm
 from tjunlp.common.util import sys_info, sec_to_time, merge_dicts, output
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
@@ -204,9 +203,7 @@ class Trainer(object):
     def _train_once(self, epoch: int, loader: DataLoader, step: bool = True):
         losses = torch.zeros(len(loader), device=self.device)
         self.model.train_mode(self.device)
-        # tqdm = Tqdm(enumerate(loader),
-        #             desc=f"Train epoch {epoch}/ {self.epoch_num}",
-        #             total=len(loader))
+        print(f"Train epoch {epoch}/ {self.epoch_num}: {sys_info()}")
         time_start = time.time()
 
         for i, batch in enumerate(loader):
@@ -221,13 +218,10 @@ class Trainer(object):
                 if self.scheduler:
                     self.scheduler.step(epoch=epoch)
 
-            if i % self.log_interval == 0:
-                # tqdm.display(f"===> [{sys_info()}] {i}/{len(loader)} : "
-                #              f"Loss= {loss.item():.4f}", pos=1)
-                if self.writer:
-                    n_example = (epoch * len(loader) + i) * loader.batch_size
-                    self.writer.add_scalar(
-                        'Train/loss', loss.item(), n_example)
+            if i % self.log_interval == 0 and self.writer:
+                n_example = (epoch * len(loader) + i) * loader.batch_size
+                self.writer.add_scalar(
+                    'Train/loss', loss.item(), n_example)
 
         self.time_epoch = time.time() - time_start
         loss_epoch = losses.mean().item()
@@ -313,13 +307,8 @@ class Trainer(object):
         loader = self.get_loader(one_set, batch_size)
         len_loader = len(loader)
         losses = torch.zeros(len_loader, device=device)
-        # desc = f"Test {name}" if epoch is None else f'Eval {name}'
-        # tqdm = Tqdm(enumerate(loader), desc=desc, total=len_loader)
         for i, batch in enumerate(loader):
             losses[i] = self.model(**to_device(batch, device))['loss'].item()
-            # if i % self.log_interval == 0:
-            #     s = '' if epoch is None else f"Loss= {losses[i]:.4f}"
-            #     tqdm.display(f"===> [{sys_info()}] {i}/{len_loader}: {s}", 1)
 
         metric_counter = copy.deepcopy(self.model.metric_counter)
         metric = self.model.get_metrics(reset=True)

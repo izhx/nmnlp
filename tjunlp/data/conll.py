@@ -12,7 +12,7 @@ from collections import OrderedDict, defaultdict
 import torch
 from conllu import parse_incr
 
-from tjunlp.common.tqdm import Tqdm
+from tjunlp.common.util import output
 from tjunlp.core.dataset import DataSet, KIND_TRAIN, PRETRAIN_POSTFIX
 
 logger = logging.getLogger(__name__)
@@ -58,15 +58,16 @@ class ConlluDataset(DataSet):
             path_list.extend(glob.glob(lang_path))
 
         path_list = [os.path.normpath(p) for p in path_list]
+        print(f"===> Matched {len(path_list)} files.")
 
         if kind == KIND_TRAIN:
             dataset = cls([], tokenizer, langs, min_len, pretrained_fields)
-            for path in Tqdm(path_list):
+            for path in path_list:
                 dataset.read_one(path)
             return dataset.stat(len(path_list) > 1)
         dataset = defaultdict(lambda: cls(
             [], tokenizer, None, min_len, pretrained_fields))
-        for path in Tqdm(path_list):
+        for path in path_list:
             lang = path.split('/')[-1].split('_')[0]
             dataset[lang].read_one(path)
             dataset[lang].langs = [lang]
@@ -78,10 +79,10 @@ class ConlluDataset(DataSet):
         name = '/'.join(file_path.split('/')[-2:])
         self.counter[name], self.droped[name] = total_num, droped_num
         self.percentage[lang] += total_num - droped_num
-        Tqdm.write(f"===> [{name}]  totally {total_num}, droped {droped_num}.")
+        print(f"===> [{name}]  totally {total_num}, droped {droped_num}.")
         return self
 
-    def _read(self, file_path: str, lang: str) -> Tuple[int]:
+    def _read(self, file_path: str, lang: str) -> Tuple[int, int]:
         total_num, droped_num, a, b = 0, 0, 0, 0
         with open(file_path, mode="r", encoding="UTF-8") as conllu_file:
             for annotation in parse_incr(conllu_file):
@@ -105,7 +106,7 @@ class ConlluDataset(DataSet):
                 else:
                     droped_num += 1
             if b / a > 0.2:
-                Tqdm.write(f"=========> {file_path} ????.'")
+                output(f"=========> {file_path} ????.'")
         return total_num, droped_num
 
     def stat(self, log: bool = False):

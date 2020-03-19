@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Any
 
 from tjunlp.core.dataset import DataSet, KIND_TRAIN, KIND_DEV, KIND_TEST
 from tjunlp.data.conll import ConlluDataset
@@ -7,12 +7,11 @@ _DATASET = {
     'Conllu': ConlluDataset
 }
 
-
 DATA_FILE_KEY_POSTFIX = '_file'
 
 
 def build_dataset(name: str, data_dir: str, read_test: bool = False,
-                  **kwargs) -> Dict[str, DataSet]:
+                  **kwargs) -> Dict[str, Any]:
     dataset = dict()
     dataset[KIND_TRAIN] = _DATASET[name].build(data_dir, KIND_TRAIN, **kwargs)
     dataset[KIND_DEV] = _DATASET[name].build(data_dir, KIND_DEV, **kwargs)

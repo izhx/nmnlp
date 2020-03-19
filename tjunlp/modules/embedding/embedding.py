@@ -11,8 +11,8 @@ import numpy
 import torch
 from torch.nn.functional import embedding
 
-from tjunlp.common.tqdm import Tqdm
 from tjunlp.common.checks import ConfigurationError
+from tjunlp.common.util import output
 from tjunlp.core import Vocabulary
 from tjunlp.common.file_utils import get_file_extension
 from tjunlp.modules import util
@@ -158,11 +158,11 @@ class Embedding(torch.nn.Module):
         embeddings = dict()
 
         # First we read the embeddings from the file, only keeping vectors for the words we need.
-        logger.info("Reading pretrained embeddings from file")
+        output("Reading pretrained embeddings from file")
 
         with EmbeddingsTextFile(pretrained_file) as embeddings_file:
             embedding_dim = embeddings_file.embedding_dim
-            for line in Tqdm.tqdm(embeddings_file):
+            for line in embeddings_file:
                 token = line.split(' ', 1)[0]
                 if token in tokens_to_keep:
                     fields = line.rstrip().split(' ')
@@ -191,7 +191,7 @@ class Embedding(torch.nn.Module):
         embeddings_std = float(numpy.std(all_embeddings))
         # Now we initialize the weight matrix for an embedding layer, starting with random vectors,
         # then filling in the word vectors we just read.
-        logger.info("Initializing pre-trained embedding layer")
+        output("Initializing pre-trained embedding layer")
         embedding_matrix = torch.FloatTensor(vocab_size, embedding_dim).normal_(embeddings_mean,
                                                                                 embeddings_std)
         num_tokens_found = 0
@@ -207,8 +207,8 @@ class Embedding(torch.nn.Module):
             else:
                 logger.debug("Token %s was not found in the embedding file. Initialising randomly.", token)
 
-        logger.info("Pretrained embeddings were found for %d out of %d tokens",
-                    num_tokens_found, vocab_size)
+        output("Pretrained embeddings were found for %d out of %d tokens",
+               num_tokens_found, vocab_size)
 
         return cls(num_embeddings=embedding_matrix.size(0),
                    embedding_dim=embedding_matrix.size(1),
