@@ -7,7 +7,6 @@ import os
 import time
 import shutil
 import copy
-from datetime import datetime
 
 import torch
 # import torch.nn as nn
@@ -17,7 +16,7 @@ from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.config import Config
-from tjunlp.common.util import sys_info, sec_to_time, merge_dicts, output
+from tjunlp.common.util import sec_to_time, merge_dicts, output, now
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
 from tjunlp.core.optim import get_lrs
@@ -37,10 +36,6 @@ DEFAULT_PREFIX = 'model_'
 
 DEVICE_CPU = 'cpu'
 DEVICE_CUDA = 'cuda'
-
-
-def now():
-    return str(datetime.now())[:-7]
 
 
 def to_device(data, device: torch.device):
@@ -155,7 +150,8 @@ class Trainer(object):
 
         return
 
-    def format_metric(self, metric: Dict) -> str:
+    @staticmethod
+    def format_metric(metric: Dict) -> str:
         info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
         return ', '.join(info)
 
@@ -203,7 +199,6 @@ class Trainer(object):
     def _train_once(self, epoch: int, loader: DataLoader, step: bool = True):
         losses = torch.zeros(len(loader), device=self.device)
         self.model.train_mode(self.device)
-        print(f"Train epoch {epoch}/ {self.epoch_num}: {sys_info()}")
         time_start = time.time()
 
         for i, batch in enumerate(loader):
@@ -230,9 +225,9 @@ class Trainer(object):
             scalars['epoch_loss'] = loss_epoch
             scalars['loss_variance'] = losses.var()
             self.add_scalars('Train', scalars, epoch)
-        print(f"[{now()}] Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
-              f"time: {sec_to_time(self.time_epoch)}, remaining: "
-              f"{sec_to_time(self.time_left(epoch))}.")
+        output(f"Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+               f"time: {sec_to_time(self.time_epoch)}, remaining: "
+               f"{sec_to_time(self.time_left(epoch))}.")
 
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
@@ -250,7 +245,7 @@ class Trainer(object):
         if self.writer:
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
-        print(f"[{now()}] Eval compete, {self.format_metric(metric)}")
+        output(f"Eval compete, {self.format_metric(metric)}")
 
         if self.save_after > epoch:
             return
@@ -298,7 +293,7 @@ class Trainer(object):
             losses.append(loss)
         metric = self.model.get_metrics(counter=merge_dicts(counters))
         if epoch is None:
-            print(f"[{now()}] All compete, {self.format_metric(metric)}")
+            output(f"All compete, {self.format_metric(metric)}")
         return counters, metric, torch.cat(losses)
 
     def _process_one(self, one_set, name, device, batch_size, epoch=None):
@@ -317,8 +312,7 @@ class Trainer(object):
             self.add_scalars('Very_Detail', metric, epoch, name)
             self.writer.flush()
         elif epoch is None:
-            print(
-                f"[{now()}] Test {name} compete, {self.format_metric(metric)}")
+            output(f"Test {name} compete, {self.format_metric(metric)}")
         return metric_counter, metric, losses
 
     def checkpoint(self, epoch: int, comment: str = None):

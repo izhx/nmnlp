@@ -24,7 +24,7 @@ class Fusion(nn.Module):
             raise ValueError(f"Unsupported fusion method <{fusion_method}>!")
 
     def forward(self, *inputs: Any) -> torch.Tensor:
-        return self.func(inputs)
+        return self.func(*inputs)
 
 
 class ScalarMix(torch.nn.Module):

@@ -11,9 +11,15 @@ logger = logging.getLogger(__name__)
 BYTE_GB = 1073741824  # 1024*1024*1024
 MG_GB = 1024
 
+
+def now():
+    return str(datetime.now())[:-7]
+
+
 def output(*args):
     message = ''.join([str(arg) for arg in args])
-    print(f"[{datetime.now()}] {message}")
+    print(f"[{now()}] {message}")
+
 
 def field_match(pattern: str, namespace: str):
     """

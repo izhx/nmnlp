@@ -71,14 +71,14 @@ class DependencyParser(Model):
         else:
             feat_dim: int = self.word_embedding.output_dim
             self.word_mlp = None
-            self.word_transform = lambda x: x
+            self.word_transform = None
 
         try:  # bert 多层融合方式
             method = kwargs['layer_fusion']
             self.fusion = Fusion(method, word_embedding['layer_num'] if method == 'mix' else -1)
             feat_dim *= word_embedding['layer_num'] if method == 'cat' else 1
         except:
-            self.fusion = lambda x: x
+            self.fusion = None
 
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(len(vocab['upostag']), **other_embedding)
@@ -126,8 +126,10 @@ class DependencyParser(Model):
                 seq_lens: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
         feat = self.word_embedding(words, **kwargs)
-        feat = self.word_transform(feat)
-        feat = self.fusion(feat)
+        if self.word_transform is not None:
+            feat = self.word_transform(feat)
+        if self.fusion is not None:
+            feat = self.fusion(feat)
 
         if self.other_embedding is not None:
             upostag = self.other_embedding(upostag, **kwargs)
