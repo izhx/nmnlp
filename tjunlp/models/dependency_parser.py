@@ -48,8 +48,8 @@ class DependencyParser(Model):
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
                  transform_dim: int = 0,
-                 arc_dim: int = 250,
-                 label_dim: int = 50,
+                 arc_dim: int = 150,
+                 label_dim: int = 150,
                  dropout: float = 0,
                  greedy_infer: bool = True,
                  **kwargs):
@@ -73,11 +73,11 @@ class DependencyParser(Model):
             self.word_mlp = None
             self.word_transform = None
 
-        try:  # bert 多层融合方式
+        if 'layer_fusion' in kwargs:  # bert 多层融合方式
             method = kwargs['layer_fusion']
             self.fusion = Fusion(method, word_embedding['layer_num'] if method == 'mix' else -1)
             feat_dim *= word_embedding['layer_num'] if method == 'cat' else 1
-        except:
+        else:
             self.fusion = None
 
         if other_embedding is not None:

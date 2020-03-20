@@ -171,9 +171,11 @@ class ConlluDataset(DataSet):
         for i, origin in zip(range(len(batch)), ids_sorted):
             seq_len = len(batch[origin]['words'])
             result['seq_lens'].append(seq_len)
-            result['sentences'].append(batch[origin]['form'])
+            # result['sentences'].append(batch[origin]['form'])
             result['mask'][i, 1:seq_len] = True
-            for key in ('words', 'upostag', 'deprel', 'head', 'id', 'words_pretrained'):
+            for key in ('words', 'upostag', 'deprel', 'head'):
+                result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
+            for key in self.pretrained_fields:
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
             for w, piece in batch[origin]['word_pieces'].items():
                 result['word_pieces'][(i, w)] = torch.LongTensor(piece)

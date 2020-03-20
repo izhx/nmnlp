@@ -99,7 +99,7 @@ class Embedding(torch.nn.Module):
         if self.padding_index is not None:
             self.weight.data[self.padding_index].fill_(0)
 
-    def forward(self, inputs):  # pylint: disable=arguments-differ
+    def forward(self, inputs, **kwargs):  # pylint: disable=arguments-differ
         # inputs may have extra dimensions (batch_size, d1, ..., dn, sequence_length),
         # but embedding expects (batch_size, sequence_length), so pass inputs to
         # util.combine_initial_dims (which is a no-op if there are no extra dimensions).
