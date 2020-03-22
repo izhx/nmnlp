@@ -89,7 +89,7 @@ class Trainer(object):
                  tensorboard: bool = False,
                  log_batch: bool = False,
                  log_dir: str = DEFAULT_LOG_DIR,
-                 log_interval: int = 0,
+                 log_interval: int = 100,
                  dev_on_cpu: bool = False,
                  prefix: str = DEFAULT_PREFIX,
                  pre_train_path: str = None,
