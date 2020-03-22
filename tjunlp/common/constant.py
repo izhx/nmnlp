@@ -32,7 +32,7 @@ Common constants used in tjunlp.
 # const = _Const()
 
 # dataset
-KEY_TRAIN, KEY_DEV, KEY_TEST = "TRAIN", "DEV", "TEST"
+KEY_TRAIN, KEY_DEV, KEY_TEST = "train", "dev", "test"
 PRETRAIN_POSTFIX = "_PRETRAINED"
 
 # vocabulary
