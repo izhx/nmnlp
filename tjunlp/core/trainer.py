@@ -16,12 +16,13 @@ from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from tjunlp.common.config import Config
+from tjunlp.common.constant import KEY_TRAIN, KEY_DEV
 from tjunlp.common.util import sec_to_time, merge_dicts, output, now
 from tjunlp.core.dataset import DataSet
 from tjunlp.core.model import Model
 from tjunlp.core.optim import get_lrs
 from tjunlp.core.vocabulary import Vocabulary
-from tjunlp.data import KIND_TRAIN, KIND_DEV, index_dataset
+from tjunlp.data import index_dataset
 
 EARLY_STOP_THRESHOLD = 10
 
@@ -30,7 +31,7 @@ SAVE_STRATEGY_ALL = 'all'
 SAVE_STRATEGY_BEST = 'best'
 SAVE_STRATEGY_SKIP = 'skip'  # every 2
 
-DEFAULT_SAVE_DIR = './exp/'
+DEFAULT_MODEL_SAVE_DIR = './exp/'
 DEFAULT_LOG_DIR = './tblog/'
 DEFAULT_PREFIX = 'model_'
 
@@ -84,7 +85,7 @@ class Trainer(object):
                  validate_every: int = 1,
                  validate_after: int = 0,
                  save_after: int = 30,
-                 save_dir: str = DEFAULT_SAVE_DIR,
+                 save_dir: str = DEFAULT_MODEL_SAVE_DIR,
                  save_strategy: str = SAVE_STRATEGY_BEST,
                  tensorboard: bool = False,
                  log_batch: bool = False,
@@ -126,7 +127,7 @@ class Trainer(object):
         self.time_epoch = 0
         self.time_eval = 0
         self.best_metric, self.best_epoch = None, 0
-        self.loss_record = {KIND_TRAIN: 0, KIND_DEV: 0}
+        self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}
         self.stop_counter = 0
 
         index_dataset(dataset, vocabulary)
@@ -169,9 +170,7 @@ class Trainer(object):
 
     def train(self) -> bool:
         train_loader = self.get_loader(
-            self.dataset[KIND_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
-        if self.log_interval == 0:  # auto interval
-            self.log_interval = len(train_loader) // 100
+            self.dataset[KEY_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
         run_flag = True  # 是否继续训练
         epoch = self.epoch_start
         output("Training started...")
@@ -180,7 +179,7 @@ class Trainer(object):
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
             self._train_once(epoch, train_loader, step)
             if self.validate_after <= epoch and (epoch + 1) % self.validate_every == 0:
-                self._eval_once(epoch, self.dataset[KIND_DEV])
+                self._eval_once(epoch, self.dataset[KEY_DEV])
             self.reload_cfg()
             if self.save_strategy != SAVE_STRATEGY_NO:
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
@@ -210,9 +209,9 @@ class Trainer(object):
                 if self.clip_grad:
                     clip_grad_func(self.model.parameters(), **self.clip_grad)
                 self.optimizer.step()
-                self.model.zero_grad()
+                self.optimizer.zero_grad()
                 if self.scheduler:
-                    self.scheduler.step(epoch=epoch)
+                    self.scheduler.step()
 
             if i % self.log_interval == 0 and self.writer:
                 n_example = (epoch * len(loader) + i) * loader.batch_size

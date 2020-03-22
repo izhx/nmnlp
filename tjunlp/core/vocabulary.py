@@ -12,8 +12,9 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 from itertools import chain
 
-from ..common.util import field_match, output
-from ..common.checks import ConfigurationError
+from tjunlp.common.checks import ConfigurationError
+from tjunlp.common.constant import KEY_TRAIN, KEY_DEV, PRETRAIN_POSTFIX, DEFAULT_FIELD
+from tjunlp.common.util import field_match, output
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,6 @@ DEFAULT_PADDING_TOKEN = "<pad>"
 DEFAULT_PADDING_INDEX = 0
 DEFAULT_OOV_TOKEN = "<unk>"
 DEFAULT_OOV_INDEX = 1
-DEFAULT_FIELD = "tokens"
-
-PRETRAIN_POSTFIX = "_pretrained"
-KIND_TRAIN, KIND_DEV = 'train', 'dev'
 
 
 class _FieldDependentDefaultDict(defaultdict):
@@ -281,13 +278,13 @@ class Vocabulary(object):
         output("Fitting token dictionary from dataset.")
         field_token_counts = defaultdict(lambda: defaultdict(int))
         if isinstance(instances, dict):
-            if isinstance(instances[KIND_DEV], dict):
+            if isinstance(instances[KEY_DEV], dict):
                 instances = chain(
-                    instances[KIND_TRAIN], *instances[KIND_DEV].values())
-            elif isinstance(instances[KIND_DEV], list):
-                instances = chain(instances[KIND_TRAIN], *instances[KIND_DEV])
+                    instances[KEY_TRAIN], *instances[KEY_DEV].values())
+            elif isinstance(instances[KEY_DEV], list):
+                instances = chain(instances[KEY_TRAIN], *instances[KEY_DEV])
             else:
-                instances = instances[KIND_TRAIN] + instances[KIND_DEV]
+                instances = instances[KEY_TRAIN] + instances[KEY_DEV]
         for instance in instances:
             for field in create_fields:
                 for token in instance[field]:

@@ -2,15 +2,13 @@
 Dataset Abstract class
 """
 
-from typing import Iterable, Dict, Tuple, List, Set, Any
+from typing import Iterable, Dict, Tuple, List, Set, Any, Union
 import itertools
 
 from torch.utils.data import Dataset, ConcatDataset
 
+from tjunlp.common.constant import KEY_TRAIN, PRETRAIN_POSTFIX
 from tjunlp.core.vocabulary import Vocabulary
-
-KIND_TRAIN, KIND_DEV, KIND_TEST = 'train', 'dev', 'test'
-PRETRAIN_POSTFIX = "_pretrained"
 
 
 class DataSet(Dataset):
@@ -19,7 +17,7 @@ class DataSet(Dataset):
     """
     index_fields: Set[str]  # 需要index的field
 
-    def __init__(self, data: List, tokenizer=None,
+    def __init__(self, data: List, tokenizer: Any = None,
                  pretrained_fields: Set[str] = (), in_memory: bool = True):
         self.data = data
         self.tokenizer = tokenizer
@@ -33,7 +31,7 @@ class DataSet(Dataset):
         # else:
         #     raise NotImplementedError('Feature in coming.')
 
-    def __add__(self, other):
+    def __add__(self, other) -> ConcatDataset:
         return ConcatDataset([self, other])
 
     def __iter__(self) -> Iterable:
@@ -46,7 +44,7 @@ class DataSet(Dataset):
         #     raise NotImplementedError('Feature in coming.')
 
     @classmethod
-    def build(cls, path, kind: str = KIND_TRAIN) -> List:
+    def build(cls, path, kind: str = KEY_TRAIN) -> Union['DataSet', List, Dict]:
         raise NotImplementedError
 
     def text_to_instance(self, *inputs) -> Any:

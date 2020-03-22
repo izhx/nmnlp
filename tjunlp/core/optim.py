@@ -1,58 +1,8 @@
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 
-import torch
-from torch.optim import Adam, SGD
-from torch.optim.adamw import AdamW
-from torch.optim import lr_scheduler
-
-from transformers import AdamW as BertAdamW
-
-from tjunlp.common.checks import ConfigurationError
 from .model import Model
 
-_OPTIMIZER = {
-    'Adam': Adam,
-    'SGD': SGD,
-    'AdamW': AdamW,
-    'BertAdamW': BertAdamW
-}
-
-_SCHEDULER = {
-    'LambdaLR': lr_scheduler.LambdaLR,
-    'StepLR': lr_scheduler.StepLR,
-    'MultiStepLR': lr_scheduler.MultiStepLR,
-    'ExponentialLR': lr_scheduler.ExponentialLR,
-    'CosineAnnealingLR': lr_scheduler.CosineAnnealingLR,
-    'CyclicLR': lr_scheduler.CyclicLR,
-    'CosineAnnealingWarmRestarts': lr_scheduler.CosineAnnealingWarmRestarts,
-    # 'OneCycleLR':
-}
-
 KEY_NAME, KEY_LR, KEY_PARAMS, KEY_OTHER = 'name', 'lr', 'params', 'other'
-
-
-def require_grads_param(params):
-    """
-    将params中不需要gradient的删除
-
-    :param iterable params: parameters
-    :return: list(nn.Parameters)
-    """
-    return [param for param in params if param.requires_grad]
-
-
-def build_optimizer(model_params: Dict, name: str, **kwargs):
-    if name in _OPTIMIZER:
-        return _OPTIMIZER[name](require_grads_param(model_params), **kwargs)
-    else:
-        raise ConfigurationError(f'Wrong optimizer name: {name} !')
-
-
-def build_lr_scheduler(optimizer, name: str, **kwargs):
-    if name in _SCHEDULER:
-        return _SCHEDULER[name](optimizer, **kwargs)
-    else:
-        raise ConfigurationError(f'Wrong lr scheduler name: {name} !')
 
 
 def param_groups_with_different_lr(model: Model,
@@ -76,8 +26,33 @@ def param_groups_with_different_lr(model: Model,
 
 
 def get_lrs(optimizer) -> Tuple[str, float]:
-    for param_dict in optimizer.param_groups:
-        if KEY_NAME in param_dict:
-            yield f"{KEY_LR}_{param_dict[KEY_NAME]}", param_dict[KEY_LR]
+    for group in optimizer.param_groups:
+        if KEY_NAME in group:
+            yield f"{KEY_LR}_{group[KEY_NAME]}", group[KEY_LR]
         else:
-            yield KEY_LR, param_dict[KEY_LR]
+            yield KEY_LR, group[KEY_LR]
+
+
+def noam_lambda(model_size: int, warmup_steps: int, factor: float = 1.0):
+    """
+    Implements the Noam Learning rate schedule. This corresponds to increasing the learning rate
+    linearly for the first `warmup_steps` training steps, and decreasing it thereafter proportionally
+    to the inverse square root of the step number, scaled by the inverse square root of the
+    dimensionality of the model. Time will tell if this is just madness or it's actually important.
+    # Parameters
+    model_size : `int`, required.
+        The hidden size parameter which dominates the number of parameters in your model.
+    warmup_steps : `int`, required.
+        The number of steps to linearly increase the learning rate.
+    factor : `float`, optional (default = 1.0).
+        The overall scale factor for the learning rate decay.
+    """
+    factor = factor * model_size ** (-0.5)
+    warm = warmup_steps ** (-1.5)
+
+    def noam(step) -> float:
+        step = 1 if step < 1 else step
+        scale = factor * min(step ** (-0.5), step * warm)
+        return scale
+
+    return noam

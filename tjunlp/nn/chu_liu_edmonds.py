@@ -10,10 +10,10 @@ def batch_decode_head(energy: torch.Tensor, lengths: torch.Tensor) -> torch.Tens
     device = energy.device
     heads = torch.zeros(energy.shape[:-1], dtype=torch.long)
     energy[:, 0, :] = 0
-    energy = energy.transpose(1, 2).detach().cpu().numpy()
+    energy = energy.transpose(1, 2).detach().cpu().numpy()  # 图索引和模型不一致
     for i, (e, l) in enumerate(zip(energy, lengths)):
         heads[i] = torch.from_numpy(decode_head(e, l))
-    heads[:, 0] = 0
+    heads[:, 0] = 0  # 如果不设置不知道为啥会出发cuda断言
     return heads.to(device)
 
 
