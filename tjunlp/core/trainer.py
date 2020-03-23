@@ -143,6 +143,7 @@ class Trainer(object):
                     shutil.rmtree(self.log_dir)
                 os.mkdir(self.log_dir)
             self.writer = SummaryWriter(log_dir=self.log_dir)
+            output(f"Tensorboard log dir <{self.log_dir}>")
         else:
             self.writer, self.log_dir = None, None
 
@@ -173,7 +174,7 @@ class Trainer(object):
             self.dataset[KEY_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
         run_flag = True  # 是否继续训练
         epoch = self.epoch_start
-        output("Training started...")
+        output(f"Training started at epoch {epoch} ...")
         time_start = time.time()
         while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
@@ -186,6 +187,7 @@ class Trainer(object):
                     self.checkpoint(epoch)
             if self.early_stop and self.stop_counter > EARLY_STOP_THRESHOLD:
                 run_flag = False  # 检查机制待完善
+                output('Early stoped!')
             epoch += 1
 
         time_train = time.time() - time_start
@@ -278,7 +280,7 @@ class Trainer(object):
 
     def _process_many(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
                       func: Callable, epoch=None):
-        if isinstance(dataset, DataSet):
+        if isinstance(dataset, DataSet) or len(dataset) < 2:
             return func(dataset, '')
         counters, losses = list(), list()
         if isinstance(dataset, Dict):
@@ -322,11 +324,9 @@ class Trainer(object):
         self.reload_cfg()
 
         if comment is None:
-            path = os.path.normpath(
-                f"{self.save_dir}/{self.prefix}_{epoch}.bac")
+            path = os.path.normpath(f"{self.save_dir}/{self.prefix}_{epoch}.bac")
         else:
-            path = os.path.normpath(
-                f"{self.save_dir}/{self.prefix}_{comment}.bac")
+            path = os.path.normpath(f"{self.save_dir}/{self.prefix}_{comment}.bac")
 
         self.cfg['trainer']['pre_train_path'] = path
         self.cfg['trainer']['epoch_start'] = epoch + 1

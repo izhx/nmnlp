@@ -105,7 +105,8 @@ def merge_dicts(dicts: Union[List[Dict], Dict[str, Dict]], key_prefix='',
 
     return result
 
-def set_visible_devices(cuda_ids: str)-> Union[torch.device, List[torch.device]]:
+
+def set_visible_devices(cuda_ids: str) -> Union[torch.device, List[torch.device]]:
     """ 1 2 3  or 1,3,2 or 3, 2, 1 必须有数字以外的分隔符，变换顺序可以映射gpu id"""
     cuda_ids = re.findall(r"\d+", cuda_ids)
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(cuda_ids)
