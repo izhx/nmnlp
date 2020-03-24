@@ -53,10 +53,10 @@ class PreTrainEmbedding(torch.nn.Module):
     def __init__(self, vocab: Vocabulary,
                  pretrained_file: str,
                  vocab_namespace: str,
-                 embedding_dim: int,
+                 embedding_dim: int,  # dim of trainable
                  fusion_method: str = 'cat',
                  padding_index: int = 0,
-                 trainable: bool = False,  # whether free the pretrained
+                 trainable: bool = False,  # whether freeze the pretrained
                  max_norm: float = None,
                  norm_type: float = 2.,
                  scale_grad_by_freq: bool = False,

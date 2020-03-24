@@ -280,15 +280,17 @@ class Trainer(object):
 
     def _process_many(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
                       func: Callable, epoch=None):
-        if isinstance(dataset, DataSet) or len(dataset) < 2:
+        if isinstance(dataset, DataSet):
             return func(dataset, '')
-        counters, losses = list(), list()
+        if len(dataset) < 1:
+            raise ValueError('Dataset is empty!')
         if isinstance(dataset, Dict):
             iterator = dataset.items()
         elif isinstance(dataset, List):
             iterator = enumerate(dataset)
         else:
             raise ValueError('dataset type not support!')
+        counters, losses = list(), list()
         for name, one_set in iterator:
             counter, _, loss = func(one_set, name)
             counters.append(counter)
