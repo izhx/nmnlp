@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from ..core import Model, Vocabulary
 from ..modules.embedding import build_word_embedding, DeepEmbedding
 from ..modules.encoder import build_encoder
-from ..modules.fusion import Fusion
+from ..modules.fusion import ScalarMixWithDropout
 from ..modules.dropout import WordDropout
 from ..modules.linear import NonLinear, Bilinear
 from ..modules.util import initial_parameter
@@ -44,15 +44,15 @@ class DependencyParser(Model):
                  criterion,
                  vocab: Vocabulary,
                  word_embedding: Dict[str, Any],
+                 transform_dim: int = 0,
+                 scalar_mix: Dict[str, Any] = None,
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
-                 transform_dim: int = 0,
                  arc_dim: int = 150,
                  label_dim: int = 150,
                  dropout: float = 0,
-                 greedy_infer: bool = True,
-                 **kwargs):
+                 greedy_infer: bool = False):
         super().__init__(criterion)
         self.word_embedding = build_word_embedding(
             num_embeddings=len(vocab['words']), vocab=vocab, **word_embedding)
@@ -73,12 +73,10 @@ class DependencyParser(Model):
             self.word_mlp = None
             self.word_transform = None
 
-        if 'layer_fusion' in kwargs:  # bert 多层融合方式
-            method = kwargs['layer_fusion']
-            self.fusion = Fusion(method, word_embedding['layer_num'] if method == 'mix' else -1)
-            feat_dim *= word_embedding['layer_num'] if method == 'cat' else 1
+        if scalar_mix is not None:  # bert 多层融合
+            self.scalar_mix = ScalarMixWithDropout(word_embedding['layer_num'], **scalar_mix)
         else:
-            self.fusion = None
+            self.scalar_mix = None
 
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(len(vocab['upostag']), **other_embedding)
@@ -128,8 +126,8 @@ class DependencyParser(Model):
         feat = self.word_embedding(words, **kwargs)
         if self.word_transform is not None:
             feat = self.word_transform(feat)
-        if self.fusion is not None:
-            feat = self.fusion(feat)
+        if self.scalar_mix is not None:
+            feat = self.scalar_mix(feat, mask)
 
         if self.other_embedding is not None:
             upostag = self.other_embedding(upostag, **kwargs)
