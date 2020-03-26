@@ -113,5 +113,5 @@ def set_visible_devices(cuda_ids: str) -> Union[torch.device, List[torch.device]
     if len(cuda_ids) == 0:
         return torch.device('cpu')
     if len(cuda_ids) > 1:
-        return [torch.device('cuda:' + cuda_id) for cuda_id in cuda_ids]
-    return torch.device('cuda:' + cuda_ids[0])
+        return [torch.device(f'cuda:{i}') for i in range(len(cuda_ids))]
+    return torch.device('cuda:0')
