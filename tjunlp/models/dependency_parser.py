@@ -13,7 +13,6 @@ import torch.nn.functional as F
 from ..core import Model, Vocabulary
 from ..modules.embedding import build_word_embedding, DeepEmbedding
 from ..modules.encoder import build_encoder
-from ..modules.fusion import ScalarMixWithDropout
 from ..modules.dropout import WordDropout
 from ..modules.linear import NonLinear, Bilinear
 from ..modules.util import initial_parameter
@@ -45,7 +44,6 @@ class DependencyParser(Model):
                  vocab: Vocabulary,
                  word_embedding: Dict[str, Any],
                  transform_dim: int = 0,
-                 scalar_mix: Dict[str, Any] = None,
                  other_embedding: Dict[str, Any] = None,
                  encoder: Dict[str, Any] = None,
                  use_mlp: bool = True,
@@ -57,26 +55,12 @@ class DependencyParser(Model):
         self.word_embedding = build_word_embedding(
             num_embeddings=len(vocab['words']), vocab=vocab, **word_embedding)
         if transform_dim > 0:
-            if 'layer_num' in word_embedding and word_embedding['layer_num'] > 1:
-                self.word_mlp = nn.ModuleList([NonLinear(
-                    self.word_embedding.output_dim, transform_dim, activation=GELU(
-                    )) for _ in range(word_embedding['layer_num'])])
-                self.word_transform = lambda x: [
-                    self.word_mlp[i](x[i]) for i in range(len(x))]
-            else:
-                self.word_mlp = NonLinear(self.word_embedding.output_dim,
-                                          transform_dim, activation=GELU())
-                self.word_transform = lambda x: self.word_mlp(x)
+            self.word_transform = NonLinear(self.word_embedding.output_dim,
+                                            transform_dim, activation=GELU())
             feat_dim: int = transform_dim
         else:
-            feat_dim: int = self.word_embedding.output_dim
-            self.word_mlp = None
             self.word_transform = None
-
-        if scalar_mix is not None:  # bert 多层融合
-            self.scalar_mix = ScalarMixWithDropout(word_embedding['layer_num'], **scalar_mix)
-        else:
-            self.scalar_mix = None
+            feat_dim: int = self.word_embedding.output_dim
 
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(len(vocab['upostag']), **other_embedding)
@@ -118,16 +102,14 @@ class DependencyParser(Model):
     def forward(self,  # pylint:disable=arguments-differ
                 words: torch.Tensor,
                 upostag: torch.Tensor,
-                mask: torch.Tensor,  # 有词的地方为True
+                mask: torch.Tensor,  # 有词的地方为1
                 head: torch.Tensor = None,
                 deprel: torch.Tensor = None,
                 seq_lens: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
-        feat = self.word_embedding(words, **kwargs)
+        feat = self.word_embedding(words, attention_mask=mask.float(), **kwargs)
         if self.word_transform is not None:
             feat = self.word_transform(feat)
-        if self.scalar_mix is not None:
-            feat = self.scalar_mix(feat, mask)
 
         if self.other_embedding is not None:
             upostag = self.other_embedding(upostag, **kwargs)
@@ -193,7 +175,6 @@ class DependencyParser(Model):
             pred_dim, indices_dim = 2, 1
             rel_pred = rel_pred.max(pred_dim)[indices_dim]
 
-        mask = mask.long()
         mask[:, 0] = 0  # mask out <root> tag
         head_pred_correct = (head_pred == head_gt).long() * mask
         rel_pred_correct = (rel_pred == rel_gt).long() * head_pred_correct
@@ -209,7 +190,7 @@ class DependencyParser(Model):
     def loss(self, arc_logits: torch.Tensor, rel_logits: torch.Tensor,
              arc_gt: torch.Tensor, rel_gt: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         _, s, n = rel_logits.shape
-        flip_mask = mask.eq(False)
+        flip_mask = mask.eq(0)
         flip_mask[:, 0] = True
         arc_logits = arc_logits.masked_fill(
             flip_mask.unsqueeze(-1).expand(arc_logits.shape), -float('inf'))

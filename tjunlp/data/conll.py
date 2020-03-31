@@ -165,7 +165,6 @@ class ConlluDataset(DataSet):
         max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
         result = defaultdict(lambda: torch.zeros(
             len(batch), max_len, dtype=torch.long))
-        result['mask'] = torch.zeros((len(batch), max_len)).bool()
         result['seq_lens'], result['sentences'] = list(), list()
         result['word_pieces'] = dict()
 
@@ -173,7 +172,7 @@ class ConlluDataset(DataSet):
             seq_len = len(batch[origin]['words'])
             result['seq_lens'].append(seq_len)
             # result['sentences'].append(batch[origin]['form'])
-            result['mask'][i, 1:seq_len] = True
+            result['mask'][i, 1:seq_len] = 1
             for key in ('words', 'upostag', 'deprel', 'head'):
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
             for key in self.pretrained_fields:
