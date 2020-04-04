@@ -9,20 +9,20 @@ import shutil
 import copy
 
 import torch
-# import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from tjunlp.common.config import Config
-from tjunlp.common.constant import KEY_TRAIN, KEY_DEV
-from tjunlp.common.util import sec_to_time, merge_dicts, output, now
-from tjunlp.core.dataset import DataSet
-from tjunlp.core.model import Model
-from tjunlp.core.optim import get_lrs
-from tjunlp.core.vocabulary import Vocabulary
-from tjunlp.data import index_dataset
+from ..common.config import Config
+from ..common.constant import KEY_TRAIN, KEY_DEV
+from ..common.util import sec_to_time, merge_dicts, output, now
+from ..data import index_dataset
+from .dataset import DataSet
+from .model import Model
+from .optim import get_lrs
+from .vocabulary import Vocabulary
+
 
 EARLY_STOP_THRESHOLD = 10
 
@@ -127,24 +127,21 @@ class Trainer(object):
         self.time_epoch = 0
         self.time_eval = 0
         self.best_metric, self.best_epoch = None, 0
-        self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}
+        # self.loss_record = {KEY_TRAIN: 0, KEY_DEV: 0}
         self.stop_counter = 0
 
         index_dataset(dataset, vocabulary)
 
-        if tensorboard:
-            if pre_train_path:  # 有path则是继续训练
-                self.log_dir = log_dir
-            else:
-                if not os.path.exists(os.path.abspath(log_dir)):
-                    os.mkdir(log_dir)
-                self.log_dir = f"{log_dir}/{prefix}_{now()[:-3].replace(' ', '_')}"
-                if os.path.exists(self.log_dir):
-                    shutil.rmtree(self.log_dir)
-                os.mkdir(self.log_dir)
+        if tensorboard and pre_train_path is None:
+            if not os.path.exists(os.path.abspath(log_dir)):
+                os.mkdir(log_dir)
+            self.log_dir = f"{log_dir}/{prefix}_{now()[:-3].replace(' ', '_')}"
+            if os.path.exists(self.log_dir):
+                shutil.rmtree(self.log_dir)
+            os.mkdir(self.log_dir)
             self.writer = SummaryWriter(log_dir=self.log_dir)
             output(f"Tensorboard log dir <{self.log_dir}>")
-        else:
+        else:  # 预训练和不log
             self.writer, self.log_dir = None, None
 
         if not os.path.exists(save_dir):
@@ -198,11 +195,25 @@ class Trainer(object):
             self.writer.close()
         return run_flag  # 若早停，返回false
 
-    def _train_once(self, epoch: int, loader: DataLoader, step: bool = True):
-        losses = torch.zeros(len(loader), device=self.device)
+    def _train_once(self, epoch: int, loader: DataLoader, step: bool):
         self.model.train_mode(self.device)
         time_start = time.time()
+        losses = self.train_func(loader, epoch, step)
+        self.time_epoch = time.time() - time_start
+        loss_epoch = losses.mean().item()
+        if self.writer:
+            scalars = dict(get_lrs(self.optimizer))
+            scalars['epoch_loss'] = loss_epoch
+            scalars['loss_variance'] = losses.var()
+            self.add_scalars('Train', scalars, epoch)
+        output(f"Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+               f"time: {sec_to_time(self.time_epoch)}, remaining: "
+               f"{sec_to_time(self.time_left(epoch))}.")
 
+    def train_func(self, loader, epoch, step) -> torch.Tensor:
+        """ the training procedure of one epoch, can be overrided by user-defined.
+        """
+        losses = torch.zeros(len(loader), device=self.device)
         for i, batch in enumerate(loader):
             loss = self.model(**to_device(batch, self.device))['loss']
             losses[i] = loss.item()
@@ -217,19 +228,8 @@ class Trainer(object):
 
             if i % self.log_interval == 0 and self.writer:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
-                self.writer.add_scalar(
-                    'Train/loss', loss.item(), n_example)
-
-        self.time_epoch = time.time() - time_start
-        loss_epoch = losses.mean().item()
-        if self.writer:
-            scalars = dict(get_lrs(self.optimizer))
-            scalars['epoch_loss'] = loss_epoch
-            scalars['loss_variance'] = losses.var()
-            self.add_scalars('Train', scalars, epoch)
-        output(f"Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
-               f"time: {sec_to_time(self.time_epoch)}, remaining: "
-               f"{sec_to_time(self.time_left(epoch))}.")
+                self.writer.add_scalar('Train/loss', loss.item(), n_example)
+        return losses
 
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
@@ -353,8 +353,9 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         if self.scheduler:
             self.scheduler.load_state_dict(checkpoint['scheduler'])
-        self.log_dir = checkpoint['log_dir']
-        self.writer = SummaryWriter(log_dir=self.log_dir)
+        if checkpoint['log_dir']:
+            self.log_dir = checkpoint['log_dir']
+            self.writer = SummaryWriter(log_dir=self.log_dir)
         output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
                f"from <{self.pre_train_path}>")
         return self

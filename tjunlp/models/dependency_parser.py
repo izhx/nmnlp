@@ -1,20 +1,20 @@
 """
-模块化Biaffine Dependency Parser，便于开展不同实验， 一些代码来自FastNLP.
+模块化Biaffine Dependency Parser，便于开展不同实验.
 """
 
 from typing import Dict, List, Any
 from collections import OrderedDict
-import math
+# from itertools import chain
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from torch.nn.functional import cross_entropy
 
 from ..core import Model, Vocabulary
 from ..modules.embedding import build_word_embedding, DeepEmbedding
 from ..modules.encoder import build_encoder
 from ..modules.dropout import WordDropout
-from ..modules.linear import NonLinear, Bilinear
+from ..modules.linear import NonLinear, Biaffine
 from ..modules.util import initial_parameter
 from ..nn.chu_liu_edmonds import batch_decode_head
 
@@ -25,13 +25,19 @@ def remove_sep(tensors: List[torch.Tensor]):
     return tensors
 
 
-class GELU(nn.Module):
-    """
-    Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
-    """
+def loss(arc_logits: torch.Tensor, rel_logits: torch.Tensor, arc_gt: torch.Tensor,
+         rel_gt: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    flip_mask = mask.eq(0)
+    flip_mask[:, 0] = True
 
-    def forward(self, x):
-        return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+    def one_loss(logits, gt):
+        return cross_entropy(logits.view(-1, logits.size(-1)), gt.masked_fill(
+            flip_mask, -1).reshape(-1), ignore_index=-1)
+
+    arc_loss = one_loss(arc_logits, arc_gt)
+    rel_loss = one_loss(rel_logits, rel_gt)
+
+    return arc_loss + rel_loss
 
 
 class DependencyParser(Model):
@@ -54,13 +60,12 @@ class DependencyParser(Model):
         super().__init__(criterion)
         self.word_embedding = build_word_embedding(
             num_embeddings=len(vocab['words']), vocab=vocab, **word_embedding)
+        feat_dim: int = self.word_embedding.output_dim
         if transform_dim > 0:
-            self.word_transform = NonLinear(self.word_embedding.output_dim,
-                                            transform_dim, activation=GELU())
+            self.word_transform = NonLinear(feat_dim, transform_dim)
             feat_dim: int = transform_dim
         else:
             self.word_transform = None
-            feat_dim: int = self.word_embedding.output_dim
 
         if other_embedding is not None:
             self.other_embedding = DeepEmbedding(len(vocab['upostag']), **other_embedding)
@@ -89,8 +94,8 @@ class DependencyParser(Model):
         self.dropout = nn.Dropout(dropout)
         self.word_dropout = WordDropout(dropout)
 
-        self.arc_classifier = Bilinear(arc_dim, arc_dim, 1)
-        self.rel_classifier = Bilinear(label_dim, label_dim, len(vocab['deprel']))
+        self.arc_classifier = Biaffine(arc_dim, arc_dim, 1)
+        self.rel_classifier = Biaffine(label_dim, label_dim, len(vocab['deprel']))
         if greedy_infer:
             self.decoder = lambda x, y: x.max(dim=2)[1]
         else:
@@ -124,8 +129,9 @@ class DependencyParser(Model):
         feat = self.word_dropout(feat)
         if self.mlp is not None:
             feat = [self.word_dropout(self.mlp[i](feat)) for i in range(2)]
-            feat = list(feat[0].split(self.split_sizes, dim=2)) + \
-                   list(feat[1].split(self.split_sizes, dim=2))
+            feat = list(feat[0].split(self.split_sizes, dim=2)) + list(
+                feat[1].split(self.split_sizes, dim=2))
+            # feat = list(chain(*map(lambda f: f.split(self.split_sizes, dim=2), feat)))
         else:
             feat = list(feat.split(self.split_sizes * 2, dim=2))
 
@@ -141,12 +147,11 @@ class DependencyParser(Model):
                   'loss': torch.zeros(1)}
 
         if self.training or self.evaluating:
-            loss = self.loss(arc_pred, rel_pred, head, deprel, mask)
-            output['loss'] = loss
+            output['loss'] = loss(arc_pred, rel_pred, head, deprel, mask)
+
         if not self.training:
-            with torch.no_grad():
-                output['metric'] = self.get_metrics(
-                    head_pred, rel_pred, head, deprel, mask)
+            output['metric'] = self.get_metrics(
+                head_pred, rel_pred, head, deprel, mask)
 
         return output
 
@@ -186,23 +191,6 @@ class DependencyParser(Model):
         self.metric_counter['num'] += num
 
         return {'UAS': arc * 1.0 / num, 'LAS': rel * 1.0 / num}
-
-    def loss(self, arc_logits: torch.Tensor, rel_logits: torch.Tensor,
-             arc_gt: torch.Tensor, rel_gt: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        _, s, n = rel_logits.shape
-        flip_mask = mask.eq(0)
-        flip_mask[:, 0] = True
-        arc_logits = arc_logits.masked_fill(
-            flip_mask.unsqueeze(-1).expand(arc_logits.shape), -float('inf'))
-        arc_gt = arc_gt.masked_fill(flip_mask, -1)
-        arc_loss = F.cross_entropy(
-            arc_logits.view(-1, s), arc_gt.reshape(-1), ignore_index=-1)
-
-        rel_gt = rel_gt.masked_fill(flip_mask, -1)
-        rel_loss = F.cross_entropy(
-            rel_logits.view(-1, n), rel_gt.reshape(-1), ignore_index=-1)
-
-        return arc_loss + rel_loss
 
     @staticmethod
     def is_best(metric: Dict[str, float], former: Dict[str, float]) -> bool:

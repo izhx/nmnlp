@@ -1,7 +1,7 @@
 pyyaml>=5.0
 psutil>=5.0
 numpy>=1.14.2
-torch>=1.2
+torch>=1.4
 tensorboard>=2.0.0
 transformers>=2.0
 conllu>=2.0

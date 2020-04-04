@@ -7,28 +7,26 @@ import torch.nn as nn
 
 class NonLinear(nn.Module):
     """
-    a
+    A linear with activation.
     """
 
-    def __init__(self, input_size, hidden_size, activation=None):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True,
+                 activation=nn.GELU()):
         super().__init__()
-        self.linear = nn.Linear(input_size, hidden_size)
-        if activation is None:
-            self._activate = lambda x: x
-        else:
-            if not callable(activation):
-                raise ValueError(
-                    f"activation must be callable: type={type(activation)}")
-            self._activate = activation
+        self.linear = nn.Linear(in_features, out_features, bias)
+        if not callable(activation):
+            raise TypeError(
+                f"activation must be callable, not {type(activation)}")
+        self.activation = activation
 
-    def forward(self, x):  # pylint:disable=arguments-differ
+    def forward(self, x: torch.Tensor):  # pylint:disable=arguments-differ
         x = self.linear(x)
-        return self._activate(x)
+        return self.activation(x)
 
 
-class Bilinear(nn.Module):
+class Biaffine(nn.Module):
     """
-    A bilinear module.
+    A biaffine module.
     Input: tensors of sizes (b x n1 x d1) and (b x n2 x d2)
     Output: tensor of size (b x n1 x n2 x O)
     """
