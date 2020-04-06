@@ -165,7 +165,8 @@ class ConlluDataset(DataSet):
         max_len = batch[ids_sorted[0]]['metadata']['len'] + 1  # for bert
         result = defaultdict(lambda: torch.zeros(
             len(batch), max_len, dtype=torch.long))
-        result['seq_lens'], result['sentences'] = list(), list()
+        result['seq_lens'] = list()
+        # result['sentences'] = list()
         result['word_pieces'] = dict()
 
         for i, origin in zip(range(len(batch)), ids_sorted):

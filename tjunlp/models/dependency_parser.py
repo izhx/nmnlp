@@ -76,7 +76,7 @@ class DependencyParser(Model):
         if encoder is not None:
             self.encoder = build_encoder(feat_dim, dropout=dropout, **encoder)
             feat_dim = self.encoder.output_dim
-            initial_parameter(self.encoder, initial_method='orthogonal')
+            # initial_parameter(self.encoder, initial_method='orthogonal')
         else:
             self.encoder = None
 
@@ -122,7 +122,7 @@ class DependencyParser(Model):
 
         feat = self.word_dropout(feat)
         if self.encoder is not None:
-            feat = self.encoder(feat, seq_lens)  # unpack会去掉[SEP]那一列
+            feat = self.encoder(feat, seq_lens, **kwargs)  # unpack会去掉[SEP]那一列
             if feat.shape[1] == words.shape[1] - 1:
                 mask, head, deprel = remove_sep([mask, head, deprel])
 

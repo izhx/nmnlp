@@ -5,7 +5,7 @@ a
 import math
 import warnings
 import numbers
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 import torch
 from torch.nn import Module, Parameter, ParameterList, Embedding, init, _VF
@@ -26,16 +26,26 @@ class LstmEncoder(Module):
                  batch_first: bool = True,
                  dropout: float = 0,
                  bidirectional: bool = False,
+                 pgn: Dict = None,
                  **kwargs):
         super().__init__()
-        self.lstm = LSTM(input_size, hidden_size, num_layers, bias, batch_first,
-                         dropout, bidirectional)
+        if pgn is None:
+            self.lstm = LSTM(input_size, hidden_size, num_layers, bias,
+                             batch_first, dropout, bidirectional)
+        else:
+            domains, dim = pgn.pop('num_domains'), pgn.pop('domain_dim')
+            self.lstm = PGLSTM(domains, dim, input_size, hidden_size,
+                               num_layers, bias, batch_first, dropout,
+                               bidirectional, **pgn)
         self.output_dim = hidden_size * 2 if bidirectional else hidden_size
 
-    def forward(self, inputs, seq_lens=None, hx=None, **kwargs):  # pylint:disable=arguments-differ
+    def forward(self, inputs, seq_lens=None, **kwargs):  # pylint:disable=arguments-differ
         inputs = pack_padded_sequence(inputs, seq_lens, batch_first=self.lstm.batch_first)
-        feat, _ = self.lstm(inputs, hx=hx)  # -> [N,L,C]
-        feat, _ = pad_packed_sequence(feat, batch_first=self.lstm.batch_firs)
+        if 'domain_id' in kwargs:
+            feat, _ = self.lstm(inputs, domain_id=kwargs['domain_id'])
+        else:
+            feat, _ = self.lstm(inputs)  # -> [N,L,C]
+        feat, _ = pad_packed_sequence(feat, batch_first=self.lstm.batch_first)
         return feat
 
 
@@ -53,6 +63,7 @@ class PGLSTM(Module):
         laryer shared, layer and direction share.
         """
         super().__init__()
+        self.mode = 'LSTM'
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -170,17 +181,49 @@ class PGLSTM(Module):
         for weight in self.parameters():
             init.uniform_(weight, -stdv, stdv)
 
+    def flatten_parameters(self, weights):
+        """Resets parameter data pointer so that they can use faster code paths.
+
+        Right now, this works only if the module is on the GPU and cuDNN is enabled.
+        Otherwise, it's a no-op.
+        """
+        any_param = weights[0].data
+        if not any_param.is_cuda or not torch.backends.cudnn.is_acceptable(any_param):
+            return
+
+        # If any parameters alias, we fall back to the slower, copying code path. This is
+        # a sufficient check, because overlapping parameter buffers that don't completely
+        # alias would break the assumptions of the uniqueness check in
+        # Module.named_parameters().
+        all_weights = weights
+        unique_data_ptrs = set(p.data_ptr() for p in all_weights)
+        if len(unique_data_ptrs) != len(all_weights):
+            return
+
+        with torch.cuda.device_of(any_param):
+            import torch.backends.cudnn.rnn as rnn
+
+            # NB: This is a temporary hack while we still don't have Tensor
+            # bindings for ATen functions
+            with torch.no_grad():
+                # NB: this is an INPLACE function on all_weights, that's why the
+                # no_grad() is necessary.
+                torch._cudnn_rnn_flatten_weight(
+                    all_weights, (4 if self.bias else 2),
+                    self.input_size, rnn.get_cudnn_mode(self.mode), self.hidden_size, self.num_layers,
+                    self.batch_first, bool(self.bidirectional))
+
     def permute_hidden(self, hx, permutation):
         # type: (Tuple[torch.Tensor, torch.Tensor], Optional[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]
         if permutation is None:
             return hx
         return apply_permutation(hx[0], permutation), apply_permutation(hx[1], permutation)
 
-    def forward(self, input: torch.Tensor, hx=None, domain_id=-1):  # noqa: F811
+    def forward(self, input: torch.Tensor, domain_id: torch.LongTensor, hx=None):  # noqa: F811
         """ one domain one time.
         """
         if 0 <= domain_id < self.domain_embedding.num_embeddings:
-            domain_emb = self.domain_embedding(torch.tensor(domain_id, device=input.device))
+            domain_emb = self.domain_embedding(domain_id)
         else:
             raise ValueError(f"invalid domain id <{domain_id}>")
 
@@ -190,6 +233,7 @@ class PGLSTM(Module):
         else:
             flat_weights = [w.matmul(p).matmul(domain_emb).squeeze(-1) for p, w in zip(
                 self.controller, self._flat_weights)]
+        self.flatten_parameters(flat_weights)
 
         orig_input = input
         # xxx: isinstance check needs to be in conditional for TorchScript to compile

@@ -7,6 +7,8 @@ import os
 import time
 import shutil
 import copy
+import warnings
+from collections import OrderedDict
 
 import torch
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
@@ -53,6 +55,11 @@ def to_device(data, device: torch.device):
     return data
 
 
+def format_metric(metric: Dict) -> str:
+    info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
+    return ', '.join(info)
+
+
 def clip_grad_func(parameters, method: str, **kwargs):
     if method == 'norm':
         clip_grad_norm_(parameters, **kwargs)
@@ -60,6 +67,57 @@ def clip_grad_func(parameters, method: str, **kwargs):
         clip_grad_value_(parameters, **kwargs)
     else:
         raise ValueError("Wrong gradient clip type!")
+
+
+def forever_yield_data(dataset, batch_size, shuffle, sampler):
+    loader = DataLoader(
+        dataset, batch_size, shuffle, sampler, collate_fn=dataset.collate_fn)
+    while True:
+        for batch in loader:
+            yield batch
+    warnings.warn("Unexpected exit.")
+
+
+def train_func(self, loader, epoch, step) -> torch.Tensor:
+    """ the training procedure of one epoch, can be overrided by user-defined.
+    """
+    losses = torch.zeros(len(loader), device=self.device)
+    for i, batch in enumerate(loader):
+        loss = self.model(**to_device(batch, self.device))['loss']
+        losses[i] = loss.item()
+        (loss / self.update_every).backward()  # gradient accumulation
+        if step:
+            if self.clip_grad:
+                clip_grad_func(self.model.parameters(), **self.clip_grad)
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            if self.scheduler:
+                self.scheduler.step()
+
+        if i % self.log_interval == 0 and self.writer:
+            n_example = (epoch * len(loader) + i) * loader.batch_size
+            self.writer.add_scalar('Train/loss', loss.item(), n_example)
+    return losses
+
+
+def process_one(self, one_set, name, device, batch_size, epoch=None):
+    """ epoch is None means test stage.
+    """
+    loader = self.get_loader(one_set, batch_size)
+    len_loader = len(loader)
+    losses = torch.zeros(len_loader, device=device)
+    for i, batch in enumerate(loader):
+        losses[i] = self.model(**to_device(batch, device))['loss'].item()
+
+    metric_counter = copy.deepcopy(self.model.metric_counter)
+    metric = self.model.get_metrics(reset=True)
+    if epoch is not None and self.writer is not None:
+        metric['loss'] = losses.mean()
+        self.add_scalars('Very_Detail', metric, epoch, name)
+        self.writer.flush()
+    elif epoch is None:
+        output(f"Test {name} compete, {format_metric(metric)}")
+    return metric_counter, metric, losses
 
 
 class Trainer(object):
@@ -147,12 +205,8 @@ class Trainer(object):
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
 
-        return
-
-    @staticmethod
-    def format_metric(metric: Dict) -> str:
-        info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
-        return ', '.join(info)
+        self.train_func = train_func
+        self.process_one = process_one
 
     def time_left(self, epoch):
         self.time_eval = self.time_epoch / 7 if self.time_eval == 0 else self.time_eval
@@ -160,11 +214,16 @@ class Trainer(object):
                      ) * (self.epoch_num - epoch)
         return time_left
 
-    def get_loader(self, dataset: DataSet, batch_size: int = 0, shuffle: bool = False,
+    def get_loader(self, dataset: Union[DataSet, Dict], batch_size: int = 0, shuffle: bool = False,
                    sampler: Sampler = None):
         batch_size = self.batch_size if batch_size == 0 else batch_size
-        return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle,
-                          sampler=sampler, collate_fn=dataset.collate_fn)
+        if isinstance(dataset, dict):
+            warnings.warn("got dict but not DataSet, will return iters.")
+            iters = OrderedDict({k: forever_yield_data(
+                v, batch_size, shuffle, sampler) for k, v in dataset.items()})
+            return iters
+        return DataLoader(dataset, batch_size, shuffle, sampler,
+                          collate_fn=dataset.collate_fn)
 
     def train(self) -> bool:
         train_loader = self.get_loader(
@@ -190,15 +249,15 @@ class Trainer(object):
         time_train = time.time() - time_start
         output(f'training compete, time: {sec_to_time(time_train)} .')
         output(f"Best epoch: {self.best_epoch}, "
-               f"{self.format_metric(self.best_metric)}")
+               f"{format_metric(self.best_metric)}")
         if self.writer:
             self.writer.close()
         return run_flag  # 若早停，返回false
 
-    def _train_once(self, epoch: int, loader: DataLoader, step: bool):
+    def _train_once(self, epoch: int, loader, step: bool):
         self.model.train_mode(self.device)
         time_start = time.time()
-        losses = self.train_func(loader, epoch, step)
+        losses = self.train_func(self, loader, epoch, step)
         self.time_epoch = time.time() - time_start
         loss_epoch = losses.mean().item()
         if self.writer:
@@ -210,30 +269,9 @@ class Trainer(object):
                f"time: {sec_to_time(self.time_epoch)}, remaining: "
                f"{sec_to_time(self.time_left(epoch))}.")
 
-    def train_func(self, loader, epoch, step) -> torch.Tensor:
-        """ the training procedure of one epoch, can be overrided by user-defined.
-        """
-        losses = torch.zeros(len(loader), device=self.device)
-        for i, batch in enumerate(loader):
-            loss = self.model(**to_device(batch, self.device))['loss']
-            losses[i] = loss.item()
-            (loss / self.update_every).backward()  # gradient accumulation
-            if step:
-                if self.clip_grad:
-                    clip_grad_func(self.model.parameters(), **self.clip_grad)
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-                if self.scheduler:
-                    self.scheduler.step()
-
-            if i % self.log_interval == 0 and self.writer:
-                n_example = (epoch * len(loader) + i) * loader.batch_size
-                self.writer.add_scalar('Train/loss', loss.item(), n_example)
-        return losses
-
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
-            return self._process_one(one_set, name, self.dev_device, self.batch_size, epoch)
+            return self.process_one(self, one_set, name, self.dev_device, self.batch_size, epoch)
 
         self.model.eval_mode(self.dev_device)
         time_eval_start = time.time()
@@ -247,7 +285,7 @@ class Trainer(object):
         if self.writer:
             self.add_scalars('Dev', metric, epoch)
             self.writer.flush()
-        output(f"Eval compete, {self.format_metric(metric)}")
+        output(f"Eval compete, {format_metric(metric)}")
 
         if self.save_after > epoch:
             return
@@ -270,7 +308,7 @@ class Trainer(object):
         device = self.dev_device if device is None else device
 
         def test_one(one_set, name):
-            return self._process_one(one_set, name, device, batch_size)
+            return self.process_one(self, one_set, name, device, batch_size)
 
         self.model.test_mode(device)
         with torch.no_grad():
@@ -297,27 +335,8 @@ class Trainer(object):
             losses.append(loss)
         metric = self.model.get_metrics(counter=merge_dicts(counters))
         if epoch is None:
-            output(f"All compete, {self.format_metric(metric)}")
+            output(f"All compete, {format_metric(metric)}")
         return counters, metric, torch.cat(losses)
-
-    def _process_one(self, one_set, name, device, batch_size, epoch=None):
-        """ epoch is None means test stage.
-        """
-        loader = self.get_loader(one_set, batch_size)
-        len_loader = len(loader)
-        losses = torch.zeros(len_loader, device=device)
-        for i, batch in enumerate(loader):
-            losses[i] = self.model(**to_device(batch, device))['loss'].item()
-
-        metric_counter = copy.deepcopy(self.model.metric_counter)
-        metric = self.model.get_metrics(reset=True)
-        if epoch is not None and self.writer is not None:
-            metric['loss'] = losses.mean()
-            self.add_scalars('Very_Detail', metric, epoch, name)
-            self.writer.flush()
-        elif epoch is None:
-            output(f"Test {name} compete, {self.format_metric(metric)}")
-        return metric_counter, metric, losses
 
     def checkpoint(self, epoch: int, comment: str = None):
         """
