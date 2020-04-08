@@ -364,6 +364,7 @@ class Trainer(object):
 
         torch.save(checkpoint, path)
         self.cfg.save()
+        self.pre_train_path = path
         output(f"Checkpoint saved at <{path}>")
 
     def load(self):
