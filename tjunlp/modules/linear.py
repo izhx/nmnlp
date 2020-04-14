@@ -4,6 +4,16 @@ import math
 import torch
 import torch.nn as nn
 
+if torch.__version__ < "1.4.0":
+    class GELU(nn.Module):
+        """
+        Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
+        """
+        def forward(self, x):
+            return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+else:
+    from torch.nn import GELU
+
 
 class NonLinear(nn.Module):
     """
@@ -11,7 +21,7 @@ class NonLinear(nn.Module):
     """
 
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 activation=nn.GELU()):
+                 activation=GELU()):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         if not callable(activation):

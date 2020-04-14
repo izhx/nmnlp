@@ -190,16 +190,19 @@ class Trainer(object):
 
         index_dataset(dataset, vocabulary)
 
-        if tensorboard and pre_train_path is None:
+        if tensorboard:
             if not os.path.exists(os.path.abspath(log_dir)):
                 os.mkdir(log_dir)
             self.log_dir = f"{log_dir}/{prefix}_{now()[:-3].replace(' ', '_')}"
             if os.path.exists(self.log_dir):
                 shutil.rmtree(self.log_dir)
-            os.mkdir(self.log_dir)
-            self.writer = SummaryWriter(log_dir=self.log_dir)
-            output(f"Tensorboard log dir <{self.log_dir}>")
-        else:  # 预训练和不log
+            if pre_train_path is None:  # 预训练就不初始化writer
+                os.mkdir(self.log_dir)
+                self.writer = SummaryWriter(log_dir=self.log_dir)
+                output(f"Tensorboard log dir <{self.log_dir}>")
+            else:
+                self.writer = None
+        else:  # 不log
             self.writer, self.log_dir = None, None
 
         if not os.path.exists(save_dir):
@@ -355,10 +358,11 @@ class Trainer(object):
         checkpoint = {
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
-            'log_dir': self.log_dir,
             'cfg': self.cfg,
             'epoch': epoch
         }
+        if self.log_dir:
+            checkpoint['log_dir'] = self.log_dir
         if self.scheduler:
             checkpoint['scheduler'] = self.scheduler.state_dict()
 
@@ -373,7 +377,7 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         if self.scheduler:
             self.scheduler.load_state_dict(checkpoint['scheduler'])
-        if checkpoint['log_dir']:
+        if checkpoint['log_dir'] and self.log_dir is not None:  # 如果存档有，并且初始化时没要求不用tb
             self.log_dir = checkpoint['log_dir']
             self.writer = SummaryWriter(log_dir=self.log_dir)
         output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "

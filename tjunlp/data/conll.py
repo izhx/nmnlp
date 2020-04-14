@@ -2,7 +2,7 @@
 Conllu dataset.
 """
 
-from typing import Any, List, Dict, Set, Tuple
+from typing import Any, List, Dict, Set
 import os
 import glob
 import random
@@ -27,20 +27,14 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
 class ConlluDataset(DataSet):
     ud_keys = ('id', 'form', 'upostag', 'head', 'deprel')  # 暂时不用 'lemma'
     index_fields = {'words', 'upostag', 'deprel'}
-    max_len = 128
+    max_len: int = 128
+    min_len: int = 2
 
     def __init__(self,
                  data: List,
                  tokenizer: Any = None,
-                 langs: list = None,
-                 min_len: int = 2,
                  pretrained_fields: Set[str] = ()):
         super().__init__(data, tokenizer, pretrained_fields)
-        self.langs = langs
-        self.min_len = min_len
-        self.percentage = defaultdict(int)
-        self.counter = defaultdict(int)  # int() = 0
-        self.droped = defaultdict(int)
 
     @classmethod
     def build(cls,
@@ -48,8 +42,8 @@ class ConlluDataset(DataSet):
               kind: str = KIND_TRAIN,
               tokenizer: Any = None,
               langs: list = None,
-              min_len: int = 2,
-              pretrained_fields: Set[str] = ()):
+              pretrained_fields: Set[str] = (),
+              mix_train=True):
         path = os.path.normpath(path)
         if not os.path.isdir(path):
             raise ValueError(f'"{path}" is not a dir!')
@@ -61,29 +55,19 @@ class ConlluDataset(DataSet):
         path_list = [os.path.normpath(p) for p in path_list]
         print(f"===> Matched {len(path_list)} files.")
 
-        if kind == KIND_TRAIN:
-            dataset = cls([], tokenizer, langs, min_len, pretrained_fields)
+        if kind == KIND_TRAIN and mix_train:
+            dataset = cls([], tokenizer, pretrained_fields)
             for path in path_list:
                 dataset.read_one(path)
-            return dataset.stat(len(path_list) > 1)
-        dataset = defaultdict(lambda: cls(
-            [], tokenizer, None, min_len, pretrained_fields))
+            return dataset
+        dataset = defaultdict(lambda: cls([], tokenizer, pretrained_fields))
         for path in path_list:
             lang = path.split('/')[-1].split('_')[0]
             dataset[lang].read_one(path)
-            dataset[lang].langs = [lang]
         return dict(dataset)
 
-    def read_one(self, file_path: str) -> 'ConlluDataset':
+    def read_one(self, file_path: str):
         lang = file_path.split('/')[-1].split('_')[0]
-        total_num, droped_num = self._read(file_path, lang)
-        name = '/'.join(file_path.split('/')[-2:])
-        self.counter[name], self.droped[name] = total_num, droped_num
-        self.percentage[lang] += total_num - droped_num
-        print(f"===> [{name}]  totally {total_num}, droped {droped_num}.")
-        return self
-
-    def _read(self, file_path: str, lang: str) -> Tuple[int, int]:
         total_num, droped_num, a, b = 0, 0, 0, 0
         with open(file_path, mode="r", encoding="UTF-8") as conllu_file:
             for annotation in parse_incr(conllu_file):
@@ -102,26 +86,14 @@ class ConlluDataset(DataSet):
                 annotation.insert(0, _ROOT)
                 total_num += 1
                 if self.max_len > len(annotation) > self.min_len:
-                    self.data.append(
-                        self.text_to_instance(annotation, lang))
+                    self.data.append(self.text_to_instance(annotation, lang))
                 else:
                     droped_num += 1
             if b / a > 0.2:
                 output(f"=========> {file_path} ????.'")
-        return total_num, droped_num
 
-    def stat(self, log: bool = False):
-        t, d = 0, 0
-        for k in self.droped.keys():
-            t += self.counter[k]
-            d += self.droped[k]
-            self.counter[k] -= self.droped[k]
-        if log:
-            print(f'===> Totally {t}, droped {d} one word instence.')
-        t -= d
-        self.percentage = {
-            k: float(v) / t for k, v in self.percentage.items()}
-        return self
+        name = '/'.join(file_path.split('/')[-2:])
+        print(f"===> [{name}]  totally {total_num}, droped {droped_num}.")
 
     def text_to_instance(self, annotation: List, lang: str):
         fields = defaultdict(list)
