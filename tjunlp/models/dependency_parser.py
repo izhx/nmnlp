@@ -76,7 +76,6 @@ class DependencyParser(Model):
         if encoder is not None:
             self.encoder = build_encoder(feat_dim, dropout=dropout, **encoder)
             feat_dim = self.encoder.output_dim
-            # initial_parameter(self.encoder, initial_method='orthogonal')
         else:
             self.encoder = None
 
@@ -112,7 +111,7 @@ class DependencyParser(Model):
                 deprel: torch.Tensor = None,
                 seq_lens: torch.Tensor = None,
                 **kwargs) -> Dict[str, Any]:
-        feat = self.word_embedding(words, attention_mask=mask.float(), **kwargs)
+        feat = self.word_embedding(words, mask=mask, **kwargs)
         if self.word_transform is not None:
             feat = self.word_transform(feat)
 
@@ -143,15 +142,13 @@ class DependencyParser(Model):
 
         rel_pred = torch.gather(rel_pred, 2, head_pred.unsqueeze(
             2).unsqueeze(3).expand(-1, -1, -1, rel_pred.shape[-1])).squeeze(2)
-        output = {'head_pred': head_pred, 'rel_pred': rel_pred,
-                  'loss': torch.zeros(1)}
+        output = {'head_pred': head_pred, 'rel_pred': rel_pred}
 
-        if self.training or self.evaluating:
+        if head is not None:
             output['loss'] = loss(arc_pred, rel_pred, head, deprel, mask)
-
-        if not self.training:
-            output['metric'] = self.get_metrics(
-                head_pred, rel_pred, head, deprel, mask)
+            if not self.training:
+                output['metric'] = self.get_metrics(
+                    head_pred, rel_pred, head, deprel, mask)
 
         return output
 

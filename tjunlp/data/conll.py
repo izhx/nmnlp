@@ -145,12 +145,17 @@ class ConlluDataset(DataSet):
             seq_len = len(batch[origin]['words'])
             result['seq_lens'].append(seq_len)
             # result['sentences'].append(batch[origin]['form'])
-            result['mask'][i, 1:seq_len] = 1
+            result['mask'][i, :seq_len] = 1
             for key in ('words', 'upostag', 'deprel', 'head'):
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
             for key in self.pretrained_fields:
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])
             for w, piece in batch[origin]['word_pieces'].items():
                 result['word_pieces'][(i, w)] = torch.LongTensor(piece)
+            if self.tokenizer is not None:
+                result['words'][i, 0] = 101  # [CLS]
+                result['words'][i, seq_len] = 102  # [SEP]
+            # if (result['words'][i] == 100).long().sum() > seq_len // 3:
+            #     print(batch[0]['metadata']['lang'], ':', batch[origin]['form'])
 
         return result
