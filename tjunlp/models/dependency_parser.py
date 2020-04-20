@@ -142,7 +142,7 @@ class DependencyParser(Model):
 
         rel_pred = torch.gather(rel_pred, 2, head_pred.unsqueeze(
             2).unsqueeze(3).expand(-1, -1, -1, rel_pred.shape[-1])).squeeze(2)
-        output = {'head_pred': head_pred, 'rel_pred': rel_pred}
+        output = {'head_pred': head_pred, 'rel_pred': rel_pred, 'loss': torch.zeros(1)}
 
         if head is not None:
             output['loss'] = loss(arc_pred, rel_pred, head, deprel, mask)

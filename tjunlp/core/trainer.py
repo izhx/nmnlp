@@ -377,7 +377,7 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         if self.scheduler:
             self.scheduler.load_state_dict(checkpoint['scheduler'])
-        if checkpoint['log_dir'] and self.log_dir is not None:  # 如果存档有，并且初始化时没要求不用tb
+        if 'log_dir' in checkpoint and self.log_dir is not None:  # 如果存档有，并且初始化时没要求不用tb
             self.log_dir = checkpoint['log_dir']
             self.writer = SummaryWriter(log_dir=self.log_dir)
         output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
