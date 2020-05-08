@@ -138,13 +138,13 @@ class ConlluDataset(DataSet):
         result = defaultdict(lambda: torch.zeros(
             len(batch), max_len, dtype=torch.long))
         result['seq_lens'] = list()
-        # result['sentences'] = list()
+        result['metadata'] = list()
         result['word_pieces'] = dict()
 
         for i, origin in zip(range(len(batch)), ids_sorted):
             seq_len = len(batch[origin]['words'])
             result['seq_lens'].append(seq_len)
-            # result['sentences'].append(batch[origin]['form'])
+            result['metadata'].append(batch[origin]['metadata'])
             result['mask'][i, :seq_len] = 1
             for key in ('words', 'upostag', 'deprel', 'head'):
                 result[key][i, :seq_len] = torch.LongTensor(batch[origin][key])

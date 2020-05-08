@@ -85,7 +85,10 @@ def train_func(self, loader, epoch, step) -> torch.Tensor:
     for i, batch in enumerate(loader):
         loss = self.model(**to_device(batch, self.device))['loss']
         losses[i] = loss.item()
-        (loss / self.update_every).backward()  # gradient accumulation
+        if self.update_every == 1:
+            loss.backward()
+        else:
+            (loss / self.update_every).backward()  # gradient accumulation
         if step:
             if self.clip_grad:
                 clip_grad_func(self.model.parameters(), **self.clip_grad)
@@ -231,6 +234,7 @@ class Trainer(object):
     def train(self) -> bool:
         train_loader = self.get_loader(
             self.dataset[KEY_TRAIN], shuffle=self.sampler is None, sampler=self.sampler)
+        output(f"batch num (per epoch): {len(train_loader)}")
         run_flag = True  # 是否继续训练
         epoch = self.epoch_start
         output(f"Training started at epoch {epoch} ...")

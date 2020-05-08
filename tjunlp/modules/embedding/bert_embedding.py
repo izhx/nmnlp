@@ -59,6 +59,8 @@ class BertEmbedding(Module):
 
         self.scalar_mix = None if scalar_mix is None else ScalarMixWithDropout(
             layer_num, **scalar_mix)
+        if layer_num == 1:
+            self.scalar_mix = lambda x, *args: x[0]
 
     def forward(self,  # pylint:disable=arguments-differ
                 input_ids: torch.Tensor,
