@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Union
 
 import torch
-import psutil
+# import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +65,13 @@ def gpu_memory_mb() -> Dict[int, List[int]]:
         return {}
 
 
-def sys_info() -> str:
-    gpu_info = [f"GPU-{k}: {(v[0] / MG_GB):.2f}/{(v[1] / MG_GB):.2f}GB"
-                for k, v in gpu_memory_mb().items()]
-    mem = psutil.virtual_memory()
-    return f"CPU: {psutil.cpu_percent()}%, " \
-           f"Mem: {(mem.used / BYTE_GB):.1f}/{(mem.total / BYTE_GB):.1f}GB, " \
-           f"{', '.join(gpu_info)}"
+# def sys_info() -> str:
+#     gpu_info = [f"GPU-{k}: {(v[0] / MG_GB):.2f}/{(v[1] / MG_GB):.2f}GB"
+#                 for k, v in gpu_memory_mb().items()]
+#     mem = psutil.virtual_memory()
+#     return f"CPU: {psutil.cpu_percent()}%, " \
+#            f"Mem: {(mem.used / BYTE_GB):.1f}/{(mem.total / BYTE_GB):.1f}GB, " \
+#            f"{', '.join(gpu_info)}"
 
 
 def sec_to_time(seconds) -> str:

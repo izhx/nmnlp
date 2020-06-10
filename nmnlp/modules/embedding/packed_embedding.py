@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 import torch
 
-from tjunlp.core.vocabulary import Vocabulary, PRETRAIN_POSTFIX
+from ..core.vocabulary import Vocabulary, PRETRAIN_POSTFIX
 from .embedding import Embedding
 from ..encoder import build_encoder
 from ..fusion import Fusion

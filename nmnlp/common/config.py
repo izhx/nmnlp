@@ -2,7 +2,7 @@ from typing import Dict, Any
 
 import yaml
 
-from tjunlp.common.checks import ConfigurationError
+from .checks import ConfigurationError
 
 
 class Config(object):

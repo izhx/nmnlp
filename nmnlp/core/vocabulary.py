@@ -12,9 +12,9 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 from itertools import chain
 
-from tjunlp.common.checks import ConfigurationError
-from tjunlp.common.constant import KEY_TRAIN, KEY_DEV, PRETRAIN_POSTFIX, DEFAULT_FIELD
-from tjunlp.common.util import field_match, output
+from ..common.checks import ConfigurationError
+from ..common.constant import KEY_TRAIN, KEY_DEV, PRETRAIN_POSTFIX, DEFAULT_FIELD
+from ..common.util import field_match, output
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class _IndexToTokenDefaultDict(_FieldDependentDefaultDict):
 
 def _read_pretrained_tokens(embeddings_file: str) -> List[str]:
     # Moving this import to the top breaks everything (cycling import, I guess)
-    from tjunlp.modules.embedding.embedding import EmbeddingsTextFile
+    from ..modules.embedding.embedding import EmbeddingsTextFile
 
     output(f'Reading pretrained tokens from: <{embeddings_file}>')
     tokens: List[str] = []

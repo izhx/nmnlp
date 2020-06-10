@@ -7,8 +7,8 @@ import itertools
 
 from torch.utils.data import Dataset, ConcatDataset
 
-from tjunlp.common.constant import KEY_TRAIN, PRETRAIN_POSTFIX
-from tjunlp.core.vocabulary import Vocabulary
+from ..common.constant import KEY_TRAIN, PRETRAIN_POSTFIX
+from .vocabulary import Vocabulary
 
 
 class DataSet(Dataset):

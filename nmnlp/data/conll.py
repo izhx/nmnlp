@@ -12,9 +12,9 @@ from collections import OrderedDict, defaultdict
 import torch
 from conllu import parse_incr
 
-from tjunlp.common.constant import KEY_TRAIN as KIND_TRAIN
-from tjunlp.common.util import output
-from tjunlp.core.dataset import DataSet, PRETRAIN_POSTFIX
+from ..common.constant import KEY_TRAIN as KIND_TRAIN
+from ..common.util import output
+from ..core.dataset import DataSet, PRETRAIN_POSTFIX
 
 logger = logging.getLogger(__name__)
 
