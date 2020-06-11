@@ -1,8 +1,8 @@
 from typing import Dict, Any
 
-from tjunlp.common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
-from tjunlp.core.dataset import DataSet
-from tjunlp.data.conll import ConlluDataset
+from ..common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
+from ..core.dataset import DataSet
+from .conll import ConlluDataset
 
 _DATASET = {
     'Conllu': ConlluDataset
