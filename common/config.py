@@ -38,7 +38,7 @@ class Config(object):
     def from_file(cls, file_path: str) -> 'Config':
         if file_path.endswith(('yml', 'yaml')):
             with open(file_path) as file:
-                cfg = yaml.load(file, Loader=yaml.FullLoader)
+                cfg = yaml.load(file)
                 return cls(cfg, file_path)
         else:
             raise ConfigurationError(
