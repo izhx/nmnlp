@@ -112,7 +112,7 @@ def process_one(self, one_set, name, device, batch_size, epoch=None):
     for i, batch in enumerate(loader):
         losses[i] = self.model(**to_device(batch, device))['loss'].item()
 
-    metric_counter = copy.deepcopy(self.model.metric_counter)
+    metric_counter = copy.deepcopy(self.model.metric.counter)
     metric = self.model.get_metrics(reset=True)
     if epoch is not None and self.writer is not None:
         metric['loss'] = losses.mean()
