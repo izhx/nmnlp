@@ -1,4 +1,5 @@
 from .bert_embedding import BertEmbedding
+from .elmo_embedding import ElmoEmbedding
 from .embedding import Embedding
 from .packed_embedding import DeepEmbedding, PreTrainEmbedding
 
@@ -9,6 +10,8 @@ def build_word_embedding(name_or_path, freeze: str = 'all', **kwargs):
     """
     if 'bert' in name_or_path:
         return BertEmbedding(name_or_path, freeze, **kwargs)
+    elif 'elmo' in name_or_path:
+        return ElmoEmbedding(name_or_path, **kwargs)
     if name_or_path == 'pretrain':
         return PreTrainEmbedding(**kwargs)
     if name_or_path == 'deep':
