@@ -8,6 +8,8 @@ import torch
 
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
+from ..scir_elmo import Embedder
+
 
 class ElmoEmbedding(torch.nn.Module):
     """
@@ -21,22 +23,28 @@ class ElmoEmbedding(torch.nn.Module):
                  dropout: float = 0.5,
                  keep_sentence_boundaries: bool = False,
                  scalar_mix_parameters: List[float] = None,
-                 module: torch.nn.Module = None):
+                 module: torch.nn.Module = None,
+                 **kwargs):
         super().__init__()
-        self.elmo = Elmo(name_or_path + '_options.json',
-                         name_or_path + '_weights.hdf5',
-                         num_output_representations,
-                         requires_grad,
-                         do_layer_norm,
-                         dropout,
-                         keep_sentence_boundaries=keep_sentence_boundaries,
-                         scalar_mix_parameters=scalar_mix_parameters,
-                         module=module)
+        if 'scir' in name_or_path.lower():  # 垃圾scir elmo，一坨屎山
+            self.elmo = Embedder(name_or_path)
+            self.get_output = lambda x: x
+            self.batch_to_ids = self.elmo.sents2elmo
+        else:
+            self.elmo = Elmo(name_or_path + 'options.json',
+                             name_or_path + 'weights.hdf5',
+                             num_output_representations,
+                             requires_grad,
+                             do_layer_norm,
+                             dropout,
+                             keep_sentence_boundaries=keep_sentence_boundaries,
+                             scalar_mix_parameters=scalar_mix_parameters,
+                             module=module)
+            self.get_output = lambda x: x['elmo_representations'][0]
+            self.batch_to_ids = batch_to_ids
+        self.output_dim = self.elmo.get_output_dim()
 
-    def forward(self, sentences: List, **kwargs):
-        """
-        sentences: ['aaaa', 'ohhhhhhhh']
-        """
-        character_ids = batch_to_ids(sentences)
-        output = self.elmo(character_ids)
-        return output['elmo_representations']
+    def forward(self, input_ids: torch.Tensor, sentences: List[List[str]], **kwargs):
+        character_ids = self.batch_to_ids(sentences).to(input_ids.device)
+        elmo_output = self.elmo(character_ids)  # 出来的mask和之前生成的一样的，没用
+        return self.get_output(elmo_output)
