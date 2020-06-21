@@ -8,6 +8,7 @@ import glob
 import random
 import logging
 from collections import OrderedDict, defaultdict
+from itertools import chain
 
 import torch
 from conllu import parse_incr
@@ -19,9 +20,27 @@ from ..core.dataset import DataSet, PRETRAIN_POSTFIX
 logger = logging.getLogger(__name__)
 
 _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
-                     ('upostag', 'root'), ('xpostag', None), ('feats', None),
+                     ('upostag', 'X'), ('xpostag', None), ('feats', None),
                      ('head', 0), ('deprel', 'root'), ('deps', None),
                      ('misc', None)])
+
+
+def conll_like_sentence_generator(conllu_file):
+    sentence = list()
+    for line in chain(conllu_file, [""]):
+        line = line.strip()
+        if not line and sentence:
+            yield sentence
+            sentence = list()
+        elif line.startswith('#'):
+            continue
+        else:
+            line = line.split('\t')
+            try:
+                line[0] = int(line[0])
+                sentence.append(line)
+            except ValueError:
+                continue
 
 
 class ConlluDataset(DataSet):
@@ -33,15 +52,17 @@ class ConlluDataset(DataSet):
     def __init__(self,
                  data: List,
                  tokenizer: Any = None,
-                 pretrained_fields: Set[str] = ()):
+                 pretrained_fields: Set[str] = (),
+                 langs: List = None):
         super().__init__(data, tokenizer, pretrained_fields)
+        self.langs = langs
 
     @classmethod
     def build(cls,
               path: str,
               kind: str = KIND_TRAIN,
               tokenizer: Any = None,
-              langs: list = None,
+              langs: List = None,
               pretrained_fields: Set[str] = (),
               mix_train=True):
         path = os.path.normpath(path)
@@ -56,11 +77,11 @@ class ConlluDataset(DataSet):
         print(f"===> Matched {len(path_list)} files.")
 
         if kind == KIND_TRAIN and mix_train:
-            dataset = cls([], tokenizer, pretrained_fields)
+            dataset = cls([], tokenizer, pretrained_fields, langs)
             for path in path_list:
                 dataset.read_one(path)
             return dataset
-        dataset = defaultdict(lambda: cls([], tokenizer, pretrained_fields))
+        dataset = defaultdict(lambda: cls([], tokenizer, pretrained_fields, langs))
         for path in path_list:
             lang = path.split('/')[-1].split('_')[0]
             dataset[lang].read_one(path)
@@ -122,7 +143,8 @@ class ConlluDataset(DataSet):
                 fields['head'][i] = 0  # 指向虚根，在UD_Portuguese-Bosque等会有None
 
         if len(self.pretrained_fields) > 0:
-            tokens = ['<root>'] + [f"{lang}_{t}" for t in tokens[1:]]
+            if len(self.langs) > 1:
+                tokens = ['<root>'] + [f"{lang}_{t}" for t in tokens[1:]]
             fields["words" + PRETRAIN_POSTFIX] = tokens
 
         fields["words"] = tokens

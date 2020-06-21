@@ -1,4 +1,5 @@
 from .bert_embedding import BertEmbedding
+from .dep_embedding import DepSAWR
 from .elmo_embedding import ElmoEmbedding
 from .embedding import Embedding
 from .packed_embedding import DeepEmbedding, PreTrainEmbedding
