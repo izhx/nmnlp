@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Sampler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from ..common.config import Config
-from ..common.constant import KEY_TRAIN, KEY_DEV
+from ..common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
 from ..common.util import sec_to_time, merge_dicts, output, now
 from ..data import index_dataset
 from .dataset import DataSet
@@ -142,6 +142,7 @@ class Trainer(object):
                  early_stop: bool = True,
                  epoch_num: int = 100,
                  epoch_start: int = 0,
+                 test_every: int = 0,
                  update_every: int = 1,
                  validate_every: int = 1,
                  validate_after: int = 0,
@@ -168,6 +169,7 @@ class Trainer(object):
         self.early_stop = early_stop
         self.epoch_num = epoch_num
         self.epoch_start = epoch_start if pre_train_path else 0
+        self.test_every = test_every  # default 0, 不测试
         self.update_every = update_every  # 梯度累积的步数 i.e. accumulation_steps
         self.validate_every = validate_every
         self.validate_after = validate_after
@@ -244,6 +246,8 @@ class Trainer(object):
             self._train_once(epoch, train_loader, step)
             if self.validate_after <= epoch and (epoch + 1) % self.validate_every == 0:
                 self._eval_once(epoch, self.dataset[KEY_DEV])
+            if self.test_every > 0 and (epoch + 1) % self.test_every == 0:
+                self.test(self.dataset[KEY_TEST], self.batch_size)
             self.reload_cfg()
             if self.save_strategy != SAVE_STRATEGY_NO:
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
