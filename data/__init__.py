@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from argparse import Namespace
 
 from ..common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
 from ..core.dataset import DataSet

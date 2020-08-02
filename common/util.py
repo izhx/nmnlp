@@ -115,3 +115,14 @@ def set_visible_devices(cuda_ids: str) -> Union[torch.device, List[torch.device]
     if len(cuda_ids) > 1:
         return [torch.device(f'cuda:{i}') for i in range(len(cuda_ids))]
     return torch.device('cuda:0')
+
+
+def to_device(data, device: torch.device):
+    if torch.is_tensor(data):
+        data = data.to(device)
+    elif isinstance(data, dict):
+        data = {k: to_device(v, device) for k, v in data.items()}
+    elif isinstance(data, list):
+        data = [to_device(i, device) for i in data]
+
+    return data

@@ -2,10 +2,12 @@
 Dataset Abstract class
 """
 
-from typing import Iterable, Dict, Tuple, List, Set, Any, Union
-import itertools
+from typing import Dict, List, Set, Any, Union, Iterable
+from itertools import chain
+from collections import defaultdict
 
-from torch.utils.data import Dataset, ConcatDataset
+import torch
+from torch.utils.data import Dataset
 
 from ..common.constant import KEY_TRAIN, PRETRAIN_POSTFIX
 from .vocabulary import Vocabulary
@@ -15,53 +17,58 @@ class DataSet(Dataset):
     """
     data container.
     """
-    index_fields: Set[str]  # 需要index的field
+    index_fields: Set[str]  # 需要index的field，也就是建立词表的
 
-    def __init__(self, data: List, tokenizer: Any = None,
-                 pretrained_fields: Set[str] = (), in_memory: bool = True):
+    def __init__(self, data: Iterable, pretrained_fields: Set[str] = ()):
         self.data = data
-        self.tokenizer = tokenizer
         self.pretrained_fields = {k + PRETRAIN_POSTFIX for k in pretrained_fields}
-        self.in_memory = in_memory  # 完成数据不在内存的代码
         self.indexed = False
+        self._vec_fields, self._int_fields = None, None
 
-    def __getitem__(self, item):
-        # if self.in_memory:
-        return self.data[item]
-        # else:
-        #     raise NotImplementedError('Feature in coming.')
+    def __getitem__(self, idx) -> Dict:
+        return self.data[idx]
 
-    def __add__(self, other) -> ConcatDataset:
-        return ConcatDataset([self, other])
-
-    def __iter__(self) -> Iterable:
-        return iter(self.data)
-
-    def __len__(self):
-        # if self.in_memory:
+    def __len__(self) -> int:
         return len(self.data)
-        # else:
-        #     raise NotImplementedError('Feature in coming.')
 
     @classmethod
     def build(cls, path, kind: str = KEY_TRAIN) -> Union['DataSet', List, Dict]:
         raise NotImplementedError
 
-    def text_to_instance(self, *inputs) -> Any:
-        raise NotImplementedError
+    # 为了简单，就不太优雅
+    def collate_fn(self, batch) -> Dict[str, Any]:
+        lengths = [len(ins[self._vec_fields[0]]) for ins in batch]
+        vec_dict = defaultdict(lambda: torch.zeros(len(batch), max(lengths), dtype=torch.long))
+        int_dict = defaultdict(lambda: torch.zeros(len(batch), dtype=torch.long))
 
-    def collate_fn(self, batch) -> Tuple[Dict, Dict]:
-        raise NotImplementedError
+        for i, (ins, seq_len) in enumerate(zip(batch, lengths)):
+            vec_dict['mask'][i, :seq_len] = 1
+            for field in self._int_fields:
+                int_dict[field][i] = ins[field]
+            for field in self._vec_fields:
+                # torch.nn.functional.pad(tensor,(0, max_len - seq_len))
+                vec_dict[field][i, :seq_len] = torch.LongTensor(ins[field])
+        else:
+            int_dict['lengths'] = torch.LongTensor(lengths)
+            vec_dict.update(int_dict)
 
-    def index_dataset(self, vocab: Vocabulary):
+        return vec_dict, batch
+
+    def index_with(self, vocab: Vocabulary) -> None:
         """
         Data should be indexed or other operation by this method.
         """
+        def index_instance(ins):
+            for field in chain(self.index_fields, self.pretrained_fields):
+                if isinstance(ins[field], list):
+                    ins[field] = vocab.indices_of(ins[field], field)
+                elif isinstance(ins[field], str):
+                    ins[field] = vocab.index_of(ins[field], field)
+            return ins
+
         if not self.indexed:
-            self.data = [self.instance_to_index(i, vocab) for i in self.data]
+            self.data = [index_instance(ins) for ins in self.data]
             self.indexed = True
 
-    def instance_to_index(self, instance, vocab: Vocabulary) -> Any:
-        for key in itertools.chain(self.index_fields, self.pretrained_fields):
-            instance[key] = vocab.tokens_to_indices(instance[key], key)
-        return instance
+        self._vec_fields = [k for k, v in self.data[0].items() if isinstance(v, list)]
+        self._int_fields = [k for k, v in self.data[0].items() if isinstance(v, int)]

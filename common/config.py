@@ -1,62 +1,48 @@
-from typing import Dict, Any
+from typing import Dict, Any, Union
+from argparse import Namespace
 
 import yaml
 
-from .checks import ConfigurationError
+
+def dict_to_namespace(dic: Dict) -> Namespace:
+    if isinstance(dic, dict):
+        for k, v in dic.items():
+            dic[k] = dict_to_namespace(v)
+        return Namespace(**dic)
+    elif isinstance(dic, list):
+        return [dict_to_namespace(i) for i in dic]
+    return dic
 
 
-class Config(object):
-    """
-    Settings and hyper parameters.
-    """
+def namespace_to_dict(obj: Namespace) -> Dict:
+    if isinstance(obj, Namespace):
+        obj = vars(obj)
 
-    def __init__(self, cfg: Dict[str, Dict], path: str, debug: bool = False):
-        self.cfg = cfg
-        self.path = path
-        self.debug = debug
-        return
+    if isinstance(obj, dict):
+        obj = {k: namespace_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        obj = [namespace_to_dict(i) for i in obj]
+    return obj
 
-    def __getitem__(self, key: str):
-        if key in self.cfg:
-            return self.cfg[key]
-        else:
-            raise KeyError("{} not found".format(key))
 
-    def __setitem__(self, key, value):
-        self.cfg[key] = value
+def load_yaml(path: str) -> Dict[str, Any]:
+    if path.endswith(('yml', 'yaml')):
+        with open(path) as file:
+            config = yaml.load(file)
+            config['path'] = path
+            return config
+    else:
+        raise ValueError(
+            f"The config file at {path} has a wrong type!")
 
-    def __contains__(self, item):
-        return item in self.cfg
 
-    def get(self, key: str, default: Any = None):
-        for k in self.cfg:
-            if key in self.cfg[k]:
-                return self.cfg[k][key]
-        return default
-
-    @classmethod
-    def from_file(cls, file_path: str) -> 'Config':
-        if file_path.endswith(('yml', 'yaml')):
-            with open(file_path) as file:
-                cfg = yaml.load(file)
-                return cls(cfg, file_path)
-        else:
-            raise ConfigurationError(
-                f"The config file at {file_path} has a wrong type!")
-
-    @classmethod
-    def from_args(cls, args):
-        cfg = cls.from_file(args.yaml)
-        cfg.debug = args.debug
-        return cfg
-
-    def to_file(self, file_path: str) -> None:
-        with open(file_path, mode='w+') as file:
-            yaml.dump(self.cfg, file)
-
-    def save(self) -> None:
-        """ save inplace. """
-        self.to_file(self.path)
-
-    def reload(self):
-        return self.from_file(self.path)
+def save_yaml(obj: Union[Dict, Namespace], path: str = None) -> None:
+    if isinstance(obj, Namespace):
+        obj = namespace_to_dict(obj)
+    if path is None:
+        try:
+            path = obj.pop('path')
+        except KeyError:
+            raise KeyError("存储的配置文件损坏!")
+    with open(path, mode='w+') as file:
+        yaml.dump(obj, file)
