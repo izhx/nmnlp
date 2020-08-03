@@ -11,7 +11,8 @@ from collections import OrderedDict, defaultdict
 from itertools import chain
 
 import torch
-from conllu import parse_incr
+# from conllu import parse_incr
+parse_incr = None
 
 from ..common.constant import KEY_TRAIN as KIND_TRAIN
 from ..common.util import output

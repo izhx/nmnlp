@@ -10,7 +10,7 @@ from argparse import Namespace
 from itertools import chain
 from collections import defaultdict
 
-from ..common import output
+from ..common.util import output
 
 
 DEFAULT_PADDING_TOKEN = "<pad>"
@@ -38,7 +38,7 @@ class Vocabulary(object):
         self.index_to_token = {k: {0: padding_token} for k in field_token_counts}
 
         for field, token_counts in field_token_counts.items():
-            if field in closed_fields:
+            if field not in closed_fields:
                 self.add_token_to_field(self.oov_token, field)
 
             filed_min_count = min_count.get(field, 1)

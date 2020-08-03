@@ -1,11 +1,10 @@
 from typing import Dict, List, Tuple
 
+from torch.nn import Module
 from torch.optim import Adam
 from torch.optim.lr_scheduler import LambdaLR
 
 from transformers.optimization import AdamW
-
-from .model import Model
 
 KEY_NAME, KEY_LR, KEY_PARAMS, KEY_OTHER = 'name', 'lr', 'params', 'other'
 
@@ -31,7 +30,7 @@ def build_scheduler(optimizer, name, **kwargs):
     pass
 
 
-def param_groups_with_different_lr(model: Model,
+def param_groups_with_different_lr(model: Module,
                                    default_lr: float,
                                    **kwargs: float) -> List[Dict]:
     """
