@@ -11,12 +11,12 @@ import torch.nn as nn
 from torch.nn.functional import cross_entropy
 
 from ..core import Model, Vocabulary
-from ..modules.embedding import build_word_embedding, DeepEmbedding
 from ..modules.encoder import build_encoder
 from ..modules.dropout import WordDropout
 from ..modules.linear import NonLinear, Biaffine
 from ..modules.util import initial_parameter
 from ..nn.chu_liu_edmonds import batch_decode_head
+from .embedding import build_word_embedding, DeepEmbedding
 
 
 def remove_sep(tensors: List[torch.Tensor]):

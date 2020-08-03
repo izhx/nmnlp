@@ -14,10 +14,10 @@ import torch
 from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader, Sampler
-from torch.utils.tensorboard.writer import SummaryWriter
 
 from ..common.config import load_yaml, save_yaml
 from ..common.util import sec_to_time, merge_dicts, output, to_device
+from ..common.writer import Writer
 from ..data import index_dataset
 from .dataset import DataSet
 from .optim import get_lrs
@@ -79,7 +79,7 @@ class Trainer(object):
                  optimizer: Optimizer,
                  sampler: Sampler = None,  # train data sampler
                  scheduler: Any = None,  # _LRScheduler is protected
-                 logger: Any = None,
+                 writer: Writer = None,
                  device: str = DEVICE_CPU,
                  clip_grad: Dict = None,
                  batch_size: int = 1,
@@ -107,6 +107,7 @@ class Trainer(object):
         self.optimizer = optimizer
         self.sampler = sampler
         self.scheduler = scheduler
+        self.writer = writer
         self.clip_grad = clip_grad
         self.batch_size = batch_size
         self.early_stop = early_stop
@@ -358,7 +359,7 @@ class Trainer(object):
                 'cfg': self.cfg,
                 'epoch': epoch
             }
-            if self.log_dir:
+            if self.writer.log_dir:
                 checkpoint['log_dir'] = self.log_dir
             if self.scheduler:
                 checkpoint['scheduler'] = self.scheduler.state_dict()
@@ -378,9 +379,8 @@ class Trainer(object):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             if self.scheduler:
                 self.scheduler.load_state_dict(checkpoint['scheduler'])
-            if 'log_dir' in checkpoint and self.log_dir is not None:  # 如果存档有，并且初始化时没要求不用tb
-                self.log_dir = checkpoint['log_dir']
-                self.writer = SummaryWriter(log_dir=self.log_dir)
+            # TODO writer处理
+
             output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
                    f"from <{self.pre_train_path}>")
         else:

@@ -32,9 +32,15 @@ class Metric(object):
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
                  mask: torch.LongTensor) -> OrderedDict[str, float]:
+        """
+        每个batch调用，更新counter，计算当前batch的分数并返回。
+        """
         raise NotImplementedError
 
     def get_metric(self, counter=None, reset=False) -> OrderedDict[str, float]:
+        """
+        用counter计算出metric。
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -43,6 +49,9 @@ class Metric(object):
 
     @staticmethod
     def metric_factory(**kwargs) -> OrderedDict:
+        """
+        注意按重要性排列参数。
+        """
         raise NotImplementedError
 
 

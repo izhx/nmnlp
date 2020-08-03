@@ -8,8 +8,8 @@ from torch.nn.functional import embedding_bag
 from torch.nn import Module, ModuleList
 from transformers import DistilBertModel, BertModel
 
-from ..linear import NonLinear
-from ..fusion import ScalarMixWithDropout
+from ..modules.linear import NonLinear
+from ..modules.fusion import ScalarMixWithDropout
 
 
 class BertEmbedding(Module):

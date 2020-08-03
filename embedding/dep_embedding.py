@@ -12,10 +12,10 @@ import torch
 from torch.nn import Module, Embedding, Dropout
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from ..augmented_lstm import BiAugmentedLstm
-from ..dropout import WordDropout
-from ..linear import NonLinear
-from nmnlp.common.util import output as printf
+from ..modules.augmented_lstm import BiAugmentedLstm
+from ..modules.dropout import WordDropout
+from ..modules.linear import NonLinear
+from ..common.util import output as printf
 
 NUM_UPOSTAG = 18  # 17 + pad
 

@@ -11,11 +11,10 @@ import numpy
 import torch
 from torch.nn.functional import embedding
 
-from nmnlp.common.checks import ConfigurationError
-from nmnlp.common.file_utils import get_file_extension
-from nmnlp.common.util import output
-from nmnlp.core import Vocabulary
-from nmnlp.modules import util
+from ..common.checks import ConfigurationError
+from ..common.util import output, get_file_extension
+from ..core import Vocabulary
+from ..modules import util
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
