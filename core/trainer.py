@@ -262,12 +262,14 @@ class Trainer(object):
             _, metric, losses = self._process_many(dataset, eval_one, epoch)
 
         self.time_eval = time.time() - time_eval_start
-        metric['loss_variance'] = losses.var().item()
-        metric['epoch_loss'] = losses.mean().item()
+
+        info = {k: v for k, v in metric.items()}
+        info['loss_variance'] = losses.var().item()
+        info['epoch_loss'] = losses.mean().item()
         if self.writer:
-            self.add_scalars('Dev', metric, epoch)
+            self.add_scalars('Dev', info, epoch)
             self.writer.flush()
-        output(f"Eval compete, {format_metric(metric)}")
+        output(f"Eval compete, {format_metric(info)}")
 
         return metric
 
