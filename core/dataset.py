@@ -23,7 +23,7 @@ class DataSet(Dataset):
         self.data = data
         self.pretrained_fields = {k + PRETRAIN_POSTFIX for k in pretrained_fields}
         self.indexed = False
-        self._vec_fields, self._int_fields = None, None
+        self._vec_fields, self._int_fields = list(), list()
 
     def __getitem__(self, idx) -> Dict:
         return self.data[idx]
@@ -70,5 +70,17 @@ class DataSet(Dataset):
             self.data = [index_instance(ins) for ins in self.data]
             self.indexed = True
 
-        self._vec_fields = [k for k, v in self.data[0].items() if isinstance(v, list)]
+        self._vec_fields = [k for k, v in self.data[0].items() if is_vec(v)]
         self._int_fields = [k for k, v in self.data[0].items() if isinstance(v, int)]
+
+
+def is_vec(obj):
+    if isinstance(obj, list):
+        for i in obj:
+            if isinstance(i, list) and is_vec(i):
+                continue
+            if not isinstance(i, int):
+                break
+        else:
+            return True
+    return False

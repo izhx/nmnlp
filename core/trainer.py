@@ -18,7 +18,6 @@ from torch.utils.data import DataLoader, Sampler
 from ..common.config import load_yaml, save_yaml
 from ..common.util import sec_to_time, merge_dicts, output, to_device
 from ..common.writer import Writer
-from ..data import index_dataset
 from .dataset import DataSet
 from .optim import get_lrs
 from .vocabulary import Vocabulary
@@ -90,7 +89,7 @@ class Trainer(object):
                  update_every: int = 1,
                  validate_every: int = 1,
                  validate_after: int = 0,
-                 save_after: int = 30,
+                 save_after: int = 0,
                  save_dir: str = DEFAULT_MODEL_SAVE_DIR,
                  save_not_only_model: bool = False,
                  save_strategy: str = SAVE_STRATEGY_BEST,
@@ -131,7 +130,8 @@ class Trainer(object):
             k: model.__dict__[k] if k in model.__dict__ else lambda *_: _
             for k in CALLBACKS})
 
-        index_dataset(dataset, vocabulary)
+        self.dataset.train.index_with(vocabulary)
+        self.dataset.dev.index_with(vocabulary)
 
     def time_left(self, epoch):
         self.time_eval = self.time_epoch / 7 if self.time_eval == 0 else self.time_eval
@@ -167,7 +167,7 @@ class Trainer(object):
                 metric = self._eval_once(epoch, self.dataset.dev)
                 if self.model.metric.is_best(metric):
                     best_epoch, stop_counter = epoch, 0
-                    if self.save_strategy == SAVE_STRATEGY_BEST:
+                    if self.save_strategy == SAVE_STRATEGY_BEST and (epoch + 1) > self.save_after:
                         self.checkpoint(epoch, comment='best')
                 else:
                     stop_counter += 1
@@ -253,7 +253,7 @@ class Trainer(object):
 
     def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
         def eval_one(one_set, name):
-            return self.process_one(one_set, name, self.dev_device, self.batch_size, epoch)
+            return self.process_one(one_set, name, self.device, self.batch_size, epoch)
 
         self.model.eval()
         time_eval_start = time.time()

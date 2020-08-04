@@ -8,7 +8,7 @@ import torch
 
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
-from ..scir_elmo import Embedder
+from .scir_elmo import Embedder
 
 
 class ElmoEmbedding(torch.nn.Module):

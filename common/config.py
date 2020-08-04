@@ -46,3 +46,4 @@ def save_yaml(obj: Union[Dict, Namespace], path: str = None) -> None:
             raise KeyError("存储的配置文件损坏!")
     with open(path, mode='w+') as file:
         yaml.dump(obj, file)
+    obj['path'] = path

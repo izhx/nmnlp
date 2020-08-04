@@ -11,7 +11,6 @@ import numpy
 import torch
 from torch.nn.functional import embedding
 
-from ..common.checks import ConfigurationError
 from ..common.util import output, get_file_extension
 from ..core import Vocabulary
 from ..modules import util
@@ -92,7 +91,7 @@ class Embedding(torch.nn.Module):
             torch.nn.init.xavier_uniform_(self.weight)
         else:
             if weight.size() != (num_embeddings, embedding_dim):
-                raise ConfigurationError("A weight matrix was passed with contradictory embedding shapes.")
+                raise Exception("A weight matrix was passed with contradictory embedding shapes.")
             self.weight = torch.nn.Parameter(weight, requires_grad=trainable)
 
         if self.padding_index is not None:
@@ -181,9 +180,9 @@ class Embedding(torch.nn.Module):
                     embeddings[token] = vector
 
         if not embeddings:
-            raise ConfigurationError("No embeddings of correct dimension found; you probably "
-                                     "misspecified your embedding_dim parameter, or didn't "
-                                     "pre-populate your Vocabulary")
+            raise Exception("No embeddings of correct dimension found; you probably "
+                            "misspecified your embedding_dim parameter, or didn't "
+                            "pre-populate your Vocabulary")
 
         all_embeddings = numpy.asarray(list(embeddings.values()))
         embeddings_mean = float(numpy.mean(all_embeddings))

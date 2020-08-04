@@ -20,7 +20,7 @@ class Metric(object):
         self.counter = self.counter_factory()
         self.best = self.metric_factory()
 
-    def is_best(self, metric: OrderedDict[str, float]) -> bool:
+    def is_best(self, metric: OrderedDict) -> bool:
         """
         根据key的顺序比较metric，在前者优先，默认数值越大越好。
         """
@@ -31,13 +31,13 @@ class Metric(object):
         return False
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
-                 mask: torch.LongTensor) -> OrderedDict[str, float]:
+                 mask: torch.LongTensor) -> OrderedDict:
         """
         每个batch调用，更新counter，计算当前batch的分数并返回。
         """
         raise NotImplementedError
 
-    def get_metric(self, counter=None, reset=False) -> OrderedDict[str, float]:
+    def get_metric(self, counter=None, reset=False) -> OrderedDict:
         """
         用counter计算出metric。
         """
@@ -61,7 +61,7 @@ class TaggingMetric(Metric):
         self.ignore_index = ignore_index
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
-                 mask: torch.LongTensor) -> OrderedDict[str, float]:
+                 mask: torch.LongTensor) -> OrderedDict:
         batch = self.counter_factory()
 
         mask = (gold_labels != self.ignore_index).long() * mask  # 只看标注

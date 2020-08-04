@@ -8,7 +8,7 @@ import numbers
 from typing import List, Tuple, Optional, Dict
 
 import torch
-from torch.nn import Module, Parameter, ParameterList, Embedding, init, _VF
+from torch.nn import Module, Parameter, ParameterList, Embedding, init
 from torch.nn.modules.rnn import apply_permutation, LSTM
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, PackedSequence
 
@@ -39,8 +39,11 @@ class LstmEncoder(Module):
                                bidirectional, **pgn)
         self.output_dim = hidden_size * 2 if bidirectional else hidden_size
 
-    def forward(self, inputs, seq_lens=None, **kwargs):  # pylint:disable=arguments-differ
-        inputs = pack_padded_sequence(inputs, seq_lens, batch_first=self.lstm.batch_first)
+    def forward(self, inputs, lengths, **kwargs):  # pylint:disable=arguments-differ
+        inputs = pack_padded_sequence(inputs,
+                                      lengths,
+                                      batch_first=self.lstm.batch_first,
+                                      enforce_sorted=False)
         if 'domain_id' in kwargs:
             feat, _ = self.lstm(inputs, domain_id=kwargs['domain_id'])
         else:
@@ -260,11 +263,11 @@ class PGLSTM(Module):
 
         self.check_forward_args(input, hx, batch_sizes)
         if batch_sizes is None:
-            result = _VF.lstm(input, hx, flat_weights, self.bias, self.num_layers,
-                              self.dropout, self.training, self.bidirectional, self.batch_first)
+            result = torch._VF.lstm(input, hx, flat_weights, self.bias, self.num_layers,
+                                    self.dropout, self.training, self.bidirectional, self.batch_first)
         else:
-            result = _VF.lstm(input, batch_sizes, hx, flat_weights, self.bias,
-                              self.num_layers, self.dropout, self.training, self.bidirectional)
+            result = torch._VF.lstm(input, batch_sizes, hx, flat_weights, self.bias,
+                                    self.num_layers, self.dropout, self.training, self.bidirectional)
         output = result[0]
         hidden = result[1:]
         # xxx: isinstance check needs to be in conditional for TorchScript to compile

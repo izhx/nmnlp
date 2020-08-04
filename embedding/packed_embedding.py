@@ -8,8 +8,8 @@ import torch
 
 from nmnlp.core.vocabulary import Vocabulary, PRETRAIN_POSTFIX
 from .embedding import Embedding
-from ..encoder import build_encoder
-from ..fusion import Fusion
+from ..modules.encoder import build_encoder
+from ..modules.fusion import Fusion
 
 
 class DeepEmbedding(torch.nn.Module):

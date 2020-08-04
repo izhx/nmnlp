@@ -10,6 +10,7 @@ from argparse import Namespace
 from itertools import chain
 from collections import defaultdict
 
+from ..common.constant import PRETRAIN_POSTFIX
 from ..common.util import output
 
 
@@ -31,6 +32,7 @@ class Vocabulary(object):
         """
         """
         # min_count = min_count or dict()
+        # pretrained_files = pretrained_files or {}
         self.padding_token = padding_token
         self.oov_token = oov_token
         self.counter = field_token_counts
@@ -50,7 +52,7 @@ class Vocabulary(object):
                         if token in pretrained_set and count >= filed_min_count:
                             self.add_token_to_field(token, field)
                 else:  # 分成两个字典
-                    field_pretrained = field + "_PRETRAINED"
+                    field_pretrained = field + PRETRAIN_POSTFIX
                     token_counts = {k: v for k, v in token_counts.items() if v > filed_min_count}
                     for token in pretrained_set:
                         self.add_token_to_field(token, field)
@@ -60,7 +62,7 @@ class Vocabulary(object):
                     for token, count in token_counts.items():
                         self.add_token_to_field(token, field)
             else:
-                for token, count in token_counts:
+                for token, count in token_counts.items():
                     if count >= filed_min_count:
                         self.add_token_to_field(token, field)
 
@@ -69,8 +71,7 @@ class Vocabulary(object):
                   datasets: Union[List, Namespace],
                   closed_fields: Iterable[str],
                   min_count: Dict[str, int] = None,
-                  max_vocab_size: Union[int, Dict[str, int]] = None,
-                  pretrained_files: Optional[Dict[str, str]] = None,
+                  pretrained_files: Optional[Dict[str, str]] = {},
                   only_include_pretrained_words: bool = False,
                   padding_token: str = DEFAULT_PADDING_TOKEN,
                   oov_token: str = DEFAULT_OOV_TOKEN) -> 'Vocabulary':
@@ -96,7 +97,6 @@ class Vocabulary(object):
         return cls(field_token_counts,
                    closed_fields,
                    min_count,
-                   max_vocab_size,
                    pretrained_files,
                    only_include_pretrained_words,
                    padding_token,
