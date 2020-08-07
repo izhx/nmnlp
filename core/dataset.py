@@ -3,13 +3,12 @@ Dataset Abstract class
 """
 
 from typing import Dict, List, Set, Any, Union, Iterable
-from itertools import chain
 from collections import defaultdict
 
 import torch
 from torch.utils.data import Dataset
 
-from ..common.constant import KEY_TRAIN, PRETRAIN_POSTFIX
+from ..common.constant import PRETRAIN_POSTFIX
 from .vocabulary import Vocabulary
 
 
@@ -21,7 +20,7 @@ class DataSet(Dataset):
 
     def __init__(self, data: Iterable, pretrained_fields: Set[str] = ()):
         self.data = data
-        self.pretrained_fields = {k + PRETRAIN_POSTFIX for k in pretrained_fields}
+        self.pretrained_fields = pretrained_fields
         self.indexed = False
         self._vec_fields, self._int_fields = list(), list()
 
@@ -32,7 +31,7 @@ class DataSet(Dataset):
         return len(self.data)
 
     @classmethod
-    def build(cls, path, kind: str = KEY_TRAIN) -> Union['DataSet', List, Dict]:
+    def build(cls, path, kind) -> Union['DataSet', List, Dict]:
         raise NotImplementedError
 
     # 为了简单，就不太优雅
@@ -58,16 +57,21 @@ class DataSet(Dataset):
         """
         Data should be indexed or other operation by this method.
         """
-        def index_instance(ins):
-            for field in chain(self.index_fields, self.pretrained_fields):
-                if isinstance(ins[field], list):
-                    ins[field] = vocab.indices_of(ins[field], field)
-                elif isinstance(ins[field], str):
-                    ins[field] = vocab.index_of(ins[field], field)
-            return ins
+        def index_field(field, namespace):
+            if isinstance(field, list):
+                return vocab.indices_of(field, namespace)
+            elif isinstance(field, str):
+                return vocab.index_of(field, namespace)
+            raise RuntimeError("不支持的操作!")
+
+        field_pairs = ((f, f + PRETRAIN_POSTFIX) for f in self.pretrained_fields)
 
         if not self.indexed:
-            self.data = [index_instance(ins) for ins in self.data]
+            for i, ins in enumerate(self.data):
+                for field, pretrain in field_pairs:
+                    ins[pretrain] = index_field(ins[field], pretrain)
+                for field in self.index_fields:
+                    ins[field] = index_field(ins[field], field)
             self.indexed = True
 
         self._vec_fields = [k for k, v in self.data[0].items() if is_vec(v)]

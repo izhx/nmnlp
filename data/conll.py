@@ -5,18 +5,20 @@ Conllu dataset.
 from typing import Any, List, Dict, Set
 import os
 import glob
+import codecs
 import random
 import logging
 from collections import OrderedDict, defaultdict
 from itertools import chain
 
 import torch
-# from conllu import parse_incr
-parse_incr = None
 
 from ..common.constant import KEY_TRAIN as KIND_TRAIN
 from ..common.util import output
 from ..core.dataset import DataSet, PRETRAIN_POSTFIX
+
+# from conllu import parse_incr
+parse_incr = None
 
 logger = logging.getLogger(__name__)
 
@@ -26,22 +28,23 @@ _ROOT = OrderedDict([('id', 0), ('form', '<root>'), ('lemma', ''),
                      ('misc', None)])
 
 
-def conll_like_sentence_generator(conllu_file):
-    sentence = list()
-    for line in chain(conllu_file, [""]):
-        line = line.strip()
-        if not line and sentence:
-            yield sentence
-            sentence = list()
-        elif line.startswith('#'):
-            continue
-        else:
-            line = line.split('\t')
-            try:
-                line[0] = int(line[0])
-                sentence.append(line)
-            except ValueError:
+def conll_like_file(path):
+    with codecs.open(path, mode='r', encoding='UTF-8') as conllu_file:
+        sentence = list()
+        for line in chain(conllu_file, [""]):
+            line = line.strip()
+            if not line and sentence:
+                yield sentence
+                sentence = list()
+            elif line.startswith('#'):
                 continue
+            else:
+                line = line.split('\t')
+                try:
+                    line[0] = int(line[0])
+                    sentence.append(line)
+                except ValueError:
+                    continue
 
 
 class ConlluDataset(DataSet):

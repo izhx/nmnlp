@@ -102,6 +102,15 @@ class Vocabulary(object):
                    padding_token,
                    oov_token)
 
+    def set_field(self, tokens: Iterable[str], field: str) -> None:
+        """
+        按列表顺序，建立新field，如果存在将被覆盖。
+        """
+        if field in self.token_to_index:
+            warnings.warn(f"Field {field} 已存在，将被覆盖！")
+        self.token_to_index[field] = {k: i for i, k in enumerate(tokens)}
+        self.index_to_token[field] = {i: k for i, k in enumerate(tokens)}
+
     def add_token_to_field(self, token: str, field: str) -> int:
         """
         Adds ``token`` to the index, if it is not already present.  Either way, we return the index of
