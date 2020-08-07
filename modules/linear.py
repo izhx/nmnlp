@@ -14,6 +14,12 @@ if torch.__version__ < "1.4.0":
 else:
     from torch.nn import GELU
 
+_ACTIVATION = {
+    'gelu': GELU,
+    'tanh': nn.Tanh,
+    'softmax': nn.Softmax
+}
+
 
 class NonLinear(nn.Module):
     """
@@ -21,13 +27,10 @@ class NonLinear(nn.Module):
     """
 
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 activation=GELU()):
+                 activation: str = 'gelu'):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
-        if not callable(activation):
-            raise TypeError(
-                f"activation must be callable, not {type(activation)}")
-        self.activation = activation
+        self.activation = _ACTIVATION[activation.lower()]
 
     def forward(self, x: torch.Tensor):  # pylint:disable=arguments-differ
         x = self.linear(x)
