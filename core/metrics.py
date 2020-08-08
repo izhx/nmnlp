@@ -84,8 +84,8 @@ class TaggingMetric(Metric):
     def get_metric(self, counter=None, reset=False):
         counter = counter or self.counter
 
-        recall = counter.positive / counter.total
-        precision = counter.correct / counter.total
+        recall = counter.correct / counter.total
+        precision = counter.correct / counter.positive
         if precision + recall == 0:
             f1 = 0
         else:
