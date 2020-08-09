@@ -28,7 +28,7 @@ def namespace_to_dict(obj: Namespace) -> Dict:
 def load_yaml(path: str) -> Dict[str, Any]:
     if path.endswith(('yml', 'yaml')):
         with open(path) as file:
-            config = yaml.load(file)
+            config = yaml.load(file, Loader=yaml.SafeLoader)
             config['path'] = path
             return config
     else:

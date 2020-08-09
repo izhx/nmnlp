@@ -39,7 +39,7 @@ DEVICE_CPU = 'cpu'
 DEVICE_CUDA = 'cuda'
 
 CALLBACKS = ('before_epoch_start', 'after_collate_batch', 'after_batch_forward',
-             'before_next_batch', 'after_epoch_end')
+             'before_next_batch', 'after_epoch_end', 'after_dev_end')
 
 
 def format_metric(metric: Dict) -> str:
@@ -127,7 +127,7 @@ class Trainer(object):
         self.time_epoch, self.time_eval = 0, 0
 
         self.callbacks = Namespace(**{
-            k: model.__dict__[k] if k in model.__dict__ else lambda *_: _
+            k: getattr(model, k) if k in dir(model) else lambda *_: _
             for k in CALLBACKS})
 
         self.dataset.train.index_with(vocabulary)
@@ -331,6 +331,9 @@ class Trainer(object):
 
         metric_counter = copy.deepcopy(self.model.metric.counter)
         metric = self.model.metric.get_metric(reset=True)
+
+        self.callbacks.after_dev_end(metric, locals())
+
         if epoch is not None and self.writer is not None:
             metric['loss'] = losses.mean()
             self.add_scalars('Very_Detail', metric, epoch, name)

@@ -18,12 +18,15 @@ class Metric(object):
 
     def __init__(self):
         self.counter = self.counter_factory()
-        self.best = self.metric_factory()
+        self.best = None
 
     def is_best(self, metric: OrderedDict) -> bool:
         """
         根据key的顺序比较metric，在前者优先，默认数值越大越好。
         """
+        if not self.best:
+            self.best = metric
+            return True
         for k, v in metric.items():
             if v > self.best[k]:
                 self.best = metric
@@ -74,14 +77,14 @@ class TaggingMetric(Metric):
         return self.get_metric(batch)
 
     @staticmethod
-    def counter_factory(total=0, positive=0, correct=0) -> Namespace:
+    def counter_factory(total=0, positive=0, correct=.0) -> Namespace:
         return Namespace(total=total, positive=positive, correct=correct)
 
     @staticmethod
-    def metric_factory(f1=0, recall=0, precision=0) -> OrderedDict:
+    def metric_factory(f1=.0, recall=.0, precision=.0) -> OrderedDict:
         return OrderedDict(F1=f1, recall=recall, precision=precision)
 
-    def get_metric(self, counter=None, reset=False):
+    def get_metric(self, counter=None, reset=False) -> OrderedDict:
         counter = counter or self.counter
 
         recall = counter.correct / counter.total
