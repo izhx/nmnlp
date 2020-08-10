@@ -69,7 +69,7 @@ class Vocabulary(object):
     @classmethod
     def from_data(cls,
                   datasets: Union[List, Namespace],
-                  closed_fields: Iterable[str],
+                  closed_fields: Iterable[str] = (),
                   min_count: Dict[str, int] = None,
                   pretrained_files: Optional[Dict[str, str]] = {},
                   only_include_pretrained_words: bool = False,

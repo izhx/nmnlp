@@ -30,7 +30,7 @@ class NonLinear(nn.Module):
                  activation: str = 'gelu'):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
-        self.activation = _ACTIVATION[activation.lower()]
+        self.activation = _ACTIVATION[activation.lower()]()
 
     def forward(self, x: torch.Tensor):  # pylint:disable=arguments-differ
         x = self.linear(x)

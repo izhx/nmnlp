@@ -38,8 +38,9 @@ DEFAULT_PREFIX = 'model_'
 DEVICE_CPU = 'cpu'
 DEVICE_CUDA = 'cuda'
 
-CALLBACKS = ('before_epoch_start', 'after_collate_batch', 'after_batch_forward',
-             'before_next_batch', 'after_epoch_end', 'after_dev_end')
+CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
+             'after_batch_forward', 'before_next_batch', 'after_epoch_end',
+             'after_dev_end')
 
 
 def format_metric(metric: Dict) -> str:
@@ -156,6 +157,9 @@ class Trainer(object):
         output(f"batch num (per epoch): {len(train_loader)}")
         run_flag = True  # 是否继续训练
         epoch, best_epoch, stop_counter = self.epoch_start, 0, 0
+
+        self.callbacks.before_time_start(self.dataset, self, locals())
+
         output(f"Training started at epoch {epoch} ...")
         time_start = time.time()
 
