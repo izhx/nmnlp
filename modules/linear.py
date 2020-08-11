@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable
 import math
 
 import torch
@@ -14,12 +14,6 @@ if torch.__version__ < "1.4.0":
 else:
     from torch.nn import GELU
 
-_ACTIVATION = {
-    'gelu': GELU,
-    'tanh': nn.Tanh,
-    'softmax': nn.Softmax
-}
-
 
 class NonLinear(nn.Module):
     """
@@ -27,10 +21,10 @@ class NonLinear(nn.Module):
     """
 
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 activation: str = 'gelu'):
+                 activation: Callable = GELU()):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
-        self.activation = _ACTIVATION[activation.lower()]()
+        self.activation = activation
 
     def forward(self, x: torch.Tensor):  # pylint:disable=arguments-differ
         x = self.linear(x)
