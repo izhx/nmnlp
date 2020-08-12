@@ -86,7 +86,12 @@ class TaggingMetric(Metric):
         counter = counter or self.counter
 
         recall = counter.correct / counter.total
-        precision = counter.correct / counter.positive
+
+        if counter.positive > 0:
+            precision = counter.correct / counter.positive
+        else:
+            precision = 0
+
         if precision + recall == 0:
             f1 = 0
         else:
