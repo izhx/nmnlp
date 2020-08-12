@@ -16,7 +16,7 @@ from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader, Sampler
 
 from ..common.config import load_yaml, save_yaml
-from ..common.util import sec_to_time, merge_dicts, output, to_device
+from ..common.util import sec_to_time, merge_dicts, output, to_device, a_better_than_b
 from ..common.writer import Writer
 from .dataset import DataSet
 from .optim import get_lrs
@@ -157,34 +157,48 @@ class Trainer(object):
         output(f"batch num (per epoch): {len(train_loader)}")
         run_flag = True  # 是否继续训练
         epoch, best_epoch, stop_counter = self.epoch_start, 0, 0
+        last_metric = None
 
         self.callbacks.before_time_start(self.dataset, self, locals())
 
         output(f"Training started at epoch {epoch} ...")
         time_start = time.time()
 
+        # 当代数小于指定数目 且 没有early stop时，持续循环
         while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
             self._train_once(epoch, train_loader, step)
 
+            # 重新读取配置文件并刷新
+            self.reload_cfg()
+
+            # 如果达到验证间隔
             if (epoch + 1) % self.validate_every == 0:
                 metric = self._eval_once(epoch, self.dataset.dev)
+                # 如果是最好的，记录
                 if self.model.metric.is_best(metric):
                     best_epoch, stop_counter = epoch, 0
+                    # 如果是保存最好的，且在大于指定epoch，则保存
                     if self.save_strategy == SAVE_STRATEGY_BEST and (epoch + 1) > self.save_after:
                         self.checkpoint(epoch, comment='best')
-                else:
-                    stop_counter += 1
 
+                # 如果有上一轮metric且上一轮更好，stop_counter增1
+                elif last_metric and a_better_than_b(last_metric, metric):
+                    stop_counter += 1
+                last_metric = metric
+
+            # 如果达到测试间隔
             if self.test_every > 0 and (epoch + 1) % self.test_every == 0:
                 self.test(self.dataset.test, self.batch_size)
 
-            self.reload_cfg()
+            # 按条件存档
             if self.save_strategy != SAVE_STRATEGY_NO:
                 if self.save_strategy == SAVE_STRATEGY_ALL and epoch > self.save_after:
                     self.checkpoint(epoch)
+
+            # 如果启用了early stop 且 计数器达到阈值，提前终止训练。
             if self.early_stop and stop_counter > EARLY_STOP_THRESHOLD:
-                run_flag = False  # 检查机制待完善
+                run_flag = False
                 output('Early stoped!')
             epoch += 1
 
@@ -378,7 +392,7 @@ class Trainer(object):
         torch.save(checkpoint, path)
         save_yaml(self.cfg)
         self.pre_train_path = path
-        output(f"Checkpoint saved at <{path}>")
+        output(f"===> Checkpoint saved at <{path}>")
 
     def load(self):
         checkpoint = torch.load(self.pre_train_path, map_location=self.device)

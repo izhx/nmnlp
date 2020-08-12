@@ -6,6 +6,8 @@ from collections import OrderedDict
 
 import torch
 
+from ..common.util import a_better_than_b
+
 
 def namespace_add(a, b):
     return Namespace(**{k: a.__dict__[k] + b.__dict__[k] for k in a.__dict__})
@@ -24,13 +26,9 @@ class Metric(object):
         """
         根据key的顺序比较metric，在前者优先，默认数值越大越好。
         """
-        if not self.best:
+        if self.best is None or a_better_than_b(metric, self.best):
             self.best = metric
             return True
-        for k, v in metric.items():
-            if v > self.best[k]:
-                self.best = metric
-                return True
         return False
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
