@@ -8,6 +8,7 @@ import time
 import copy
 import warnings
 from argparse import Namespace
+from functools import reduce
 from collections import OrderedDict
 
 import torch
@@ -16,10 +17,11 @@ from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader, Sampler
 
 from ..common.config import load_yaml, save_yaml
-from ..common.util import sec_to_time, merge_dicts, output, to_device, a_better_than_b
+from ..common.util import sec_to_time, output, to_device
 from ..common.writer import Writer
 from .dataset import DataSet
 from .optim import get_lrs
+from .metrics import a_better_than_b, namespace_add
 from .vocabulary import Vocabulary
 
 
@@ -40,7 +42,7 @@ DEVICE_CUDA = 'cuda'
 
 CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'after_batch_forward', 'before_next_batch', 'after_epoch_end',
-             'after_dev_end')
+             'after_dev_end', 'before_test_start')
 
 
 def format_metric(metric: Dict) -> str:
@@ -295,6 +297,8 @@ class Trainer(object):
              batch_size: int = 0, device: torch.device = None):
         device = self.device if device is None else device
 
+        self.callbacks.before_test_start(dataset, self, locals())
+
         def test_one(one_set, name):
             return self.process_one(one_set, name, device, batch_size)
 
@@ -323,7 +327,8 @@ class Trainer(object):
             counters.append(counter)
             losses.append(loss)
 
-        metric = self.model.metric.get_metric(counter=merge_dicts(counters))
+        metric = self.model.metric.get_metric(
+            counter=reduce(namespace_add, counters))
         if epoch is None:
             output(f"All compete, {format_metric(metric)}")
         return counters, metric, torch.cat(losses)

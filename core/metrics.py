@@ -6,7 +6,14 @@ from collections import OrderedDict
 
 import torch
 
-from ..common.util import a_better_than_b
+
+def a_better_than_b(a, b):
+    for k, v in a.items():
+        if v > b[k]:
+            return True
+        elif v < b[k]:
+            return False
+    return False
 
 
 def namespace_add(a, b):

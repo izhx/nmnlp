@@ -22,7 +22,8 @@ class DataSet(Dataset):
         self.data = data
         self.pretrained_fields = pretrained_fields
         self.indexed = False
-        self._vec_fields, self._int_fields = list(), list()
+        self.vec_fields = list()
+        self.int_fields = list()
 
     def __getitem__(self, idx) -> Dict:
         return self.data[idx]
@@ -36,15 +37,15 @@ class DataSet(Dataset):
 
     # 为了简单，就不太优雅
     def collate_fn(self, batch) -> Dict[str, Any]:
-        lengths = [len(ins[self._vec_fields[0]]) for ins in batch]
+        lengths = [len(ins[self.vec_fields[0]]) for ins in batch]
         vec_dict = defaultdict(lambda: torch.zeros(len(batch), max(lengths), dtype=torch.long))
         int_dict = defaultdict(lambda: torch.zeros(len(batch), dtype=torch.long))
 
         for i, (ins, seq_len) in enumerate(zip(batch, lengths)):
             vec_dict['mask'][i, :seq_len] = 1
-            for field in self._int_fields:
+            for field in self.int_fields:
                 int_dict[field][i] = ins[field]
-            for field in self._vec_fields:
+            for field in self.vec_fields:
                 # torch.nn.functional.pad(tensor,(0, max_len - seq_len))
                 vec_dict[field][i, :seq_len] = torch.LongTensor(ins[field])
         else:
@@ -74,8 +75,8 @@ class DataSet(Dataset):
                     ins[field] = index_field(ins[field], field)
             self.indexed = True
 
-        self._vec_fields = [k for k, v in self.data[0].items() if is_vec(v)]
-        self._int_fields = [k for k, v in self.data[0].items() if isinstance(v, int)]
+        self.vec_fields = [k for k, v in self.data[0].items() if is_vec(v)]
+        self.int_fields = [k for k, v in self.data[0].items() if isinstance(v, int)]
 
 
 def is_vec(obj):
