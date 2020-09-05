@@ -145,11 +145,6 @@ class Trainer(object):
     def get_loader(self, dataset: Union[DataSet, Dict], batch_size: int = 0, shuffle: bool = False,
                    sampler: Sampler = None):
         batch_size = self.batch_size if batch_size == 0 else batch_size
-        if isinstance(dataset, dict):
-            warnings.warn("got dict but not DataSet, will return iters.")
-            iters = OrderedDict({k: forever_yield_data(
-                v, batch_size, shuffle, sampler) for k, v in dataset.items()})
-            return iters
         return DataLoader(dataset, batch_size, shuffle, sampler,
                           collate_fn=dataset.collate_fn)
 
@@ -271,15 +266,12 @@ class Trainer(object):
 
         return losses
 
-    def _eval_once(self, epoch: int, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]]):
-        def eval_one(one_set, name):
-            return self.process_one(one_set, name, self.device, self.batch_size, epoch)
-
+    def _eval_once(self, epoch: int, dataset: DataSet):
         self.model.eval()
         time_eval_start = time.time()
 
         with torch.no_grad():
-            _, metric, losses = self._process_many(dataset, eval_one, epoch)
+            metric, _, losses = self.process_one(dataset, '', self.device, self.batch_size, epoch)
 
         self.time_eval = time.time() - time_eval_start
 
@@ -293,45 +285,17 @@ class Trainer(object):
 
         return metric
 
-    def test(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
+    def test(self, dataset: DataSet,
              batch_size: int = 0, device: torch.device = None):
         device = self.device if device is None else device
 
         self.callbacks.before_test_start(dataset, self, locals())
 
-        def test_one(one_set, name):
-            return self.process_one(one_set, name, device, batch_size)
-
         self.model.train(False)  # equal to `self.model.eval()`
         with torch.no_grad():
-            counters, *_ = self._process_many(dataset, test_one)
+            metric, *_ = self.process_one(dataset, '', device, batch_size)
 
-        return counters
-
-    def _process_many(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
-                      func: Callable, epoch=None):
-        if isinstance(dataset, DataSet):
-            return func(dataset, '')
-        if len(dataset) < 1:
-            raise ValueError('Dataset is empty!')
-        if isinstance(dataset, Dict):
-            iterator = dataset.items()
-        elif isinstance(dataset, List):
-            iterator = enumerate(dataset)
-        else:
-            raise ValueError('dataset type not support!')
-
-        counters, losses = list(), list()
-        for name, one_set in iterator:
-            counter, _, loss = func(one_set, name)
-            counters.append(counter)
-            losses.append(loss)
-
-        metric = self.model.metric.get_metric(
-            counter=reduce(namespace_add, counters))
-        if epoch is None:
-            output(f"All compete, {format_metric(metric)}")
-        return counters, metric, torch.cat(losses)
+        return metric
 
     def process_one(self, one_set, name, device, batch_size, epoch=None):
         """ epoch is None means test stage.
@@ -363,7 +327,7 @@ class Trainer(object):
             self.writer.flush()
         elif epoch is None:
             output(f"Test {name} compete, {format_metric(metric)}")
-        return metric_counter, metric, losses
+        return metric, metric_counter, losses
 
     def checkpoint(self, epoch: int, comment: str = None):
         """
@@ -453,3 +417,79 @@ class Trainer(object):
     #     """
     #     """
     #     pass
+
+
+class MultiSourceTrainer(Trainer):
+    def _process_many(self, dataset: Union[DataSet, List[DataSet], Dict[str, DataSet]],
+                      func: Callable, epoch=None):
+        if len(dataset) < 1:
+            raise ValueError('Dataset is empty!')
+        if isinstance(dataset, Dict):
+            iterator = dataset.items()
+        elif isinstance(dataset, List):
+            iterator = enumerate(dataset)
+        else:
+            raise ValueError('dataset type not support!')
+
+        counters, losses = list(), list()
+        for name, one_set in iterator:
+            _, counter, loss = func(one_set, name)
+            counters.append(counter)
+            losses.append(loss)
+
+        metric = self.model.metric.get_metric(
+            counter=reduce(namespace_add, counters))
+        if epoch is None:
+            output(f"All compete, {format_metric(metric)}")
+        return metric, counters, torch.cat(losses)
+
+    def _eval_once(self, epoch: int, dataset: Union[List[DataSet], Dict[str, DataSet]]):
+        def eval_one(one_set, name):
+            return self.process_one(one_set, name, self.device, self.batch_size, epoch)
+
+        self.model.eval()
+        time_eval_start = time.time()
+
+        with torch.no_grad():
+            metric, _, losses = self._process_many(dataset, eval_one, epoch)
+
+        self.time_eval = time.time() - time_eval_start
+
+        info = {k: v for k, v in metric.items()}
+        info['loss_variance'] = losses.var().item()
+        info['epoch_loss'] = losses.mean().item()
+        if self.writer:
+            self.add_scalars('Dev', info, epoch)
+            self.writer.flush()
+        output(f"Eval compete, {format_metric(info)}")
+
+        return metric
+
+    def test(self, dataset: Union[List[DataSet], Dict[str, DataSet]],
+             batch_size: int = 0, device: torch.device = None):
+        device = self.device if device is None else device
+
+        self.callbacks.before_test_start(dataset, self, locals())
+
+        def test_one(one_set, name):
+            return self.process_one(one_set, name, device, batch_size)
+
+        self.model.train(False)  # equal to `self.model.eval()`
+        with torch.no_grad():
+            metric, counters, *_ = self._process_many(dataset, test_one)
+
+        return metric, counters
+
+    def get_loader(self,
+                   dataset: Union[DataSet, Dict],
+                   batch_size: int = 0,
+                   shuffle: bool = False,
+                   sampler: Sampler = None):
+        batch_size = self.batch_size if batch_size == 0 else batch_size
+        if isinstance(dataset, dict):
+            warnings.warn("got dict but not DataSet, will return iters.")
+            iters = OrderedDict({k: forever_yield_data(
+                v, batch_size, shuffle, sampler) for k, v in dataset.items()})
+            return iters
+        return DataLoader(dataset, batch_size, shuffle, sampler,
+                          collate_fn=dataset.collate_fn)

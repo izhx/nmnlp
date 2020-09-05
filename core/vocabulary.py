@@ -94,7 +94,7 @@ class Vocabulary(object):
                 for token in instance[field]:
                     field_token_counts[field][token] += 1
 
-        return cls(field_token_counts,
+        return cls(dict(field_token_counts),
                    closed_fields,
                    min_count,
                    pretrained_files,

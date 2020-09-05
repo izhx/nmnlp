@@ -1,5 +1,7 @@
 import os
 import re
+import time
+import pickle
 import logging
 import subprocess
 from collections import defaultdict
@@ -13,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 BYTE_GB = 1073741824  # 1024*1024*1024
 MG_GB = 1024
+BASE_DIR = './'
 
 
 def now():
@@ -132,3 +135,44 @@ def get_file_extension(path: str, dot=True, lower: bool = True):
     ext = os.path.splitext(path)[1]
     ext = ext if dot else ext[1:]
     return ext.lower() if lower else ext
+
+
+def make_dirs(path=BASE_DIR):
+    """创建所需dev/cache config data model 等目录"""
+    global BASE_DIR
+    if os.path.normpath(path) != os.path.normpath(BASE_DIR):
+        BASE_DIR = os.path.normpath(path)
+
+    def mkdir(name):
+        path = os.path.join(BASE_DIR, name + '/')
+        if not os.path.isdir(path):
+            os.mkdir(path)
+
+    for n in ('dev', 'dev/cache/', 'dev/config', 'dev/data', 'dev/model'):
+        mkdir(n)
+
+
+def cache_path(name):
+    return os.path.join(BASE_DIR + 'dev/cache/', name + ".pkl")
+
+
+def dump_cache(data, name):
+    with open(cache_path(name), mode='wb') as file:
+        pickle.dump(data, file)
+    output(f"file saved at <{cache_path(name)}>")
+
+
+def load_cache(name):
+    with open(cache_path(name), mode='rb') as file:
+        data = pickle.load(file)
+    output(f"file loaded from <{cache_path(name)}>")
+    return data
+
+
+def loop(device):
+    output("start looping...")
+    while True:
+        time.sleep(0.05)
+        a, b = torch.rand(233, 233, 233).to(device), torch.rand(233, 233, 233).to(device)
+        c = a * b
+        a = c
