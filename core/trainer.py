@@ -41,8 +41,8 @@ DEVICE_CPU = 'cpu'
 DEVICE_CUDA = 'cuda'
 
 CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
-             'after_batch_forward', 'before_next_batch', 'after_epoch_end',
-             'after_dev_end', 'before_test_start')
+             'before_batch_forward', 'after_batch_forward', 'before_next_batch',
+             'after_epoch_end', 'after_dev_end', 'before_test_start')
 
 
 def format_metric(metric: Dict) -> str:
@@ -240,6 +240,8 @@ class Trainer(object):
             input_dict, *_ = self.callbacks.after_collate_batch(input_dict, batch, locals())
             input_dict = to_device(input_dict, self.device)
 
+            input_dict, *_ = self.callbacks.before_batch_forward(input_dict, locals())
+
             output_dict = self.model(**input_dict)
 
             output_dict, *_ = self.callbacks.after_batch_forward(output_dict, locals())
@@ -307,6 +309,8 @@ class Trainer(object):
         for i, (input_dict, batch) in enumerate(loader):
             input_dict, *_ = self.callbacks.after_collate_batch(input_dict, batch, locals())
             input_dict = to_device(input_dict, device)
+
+            input_dict, *_ = self.callbacks.before_batch_forward(input_dict, locals())
 
             output_dict = self.model(**input_dict)
 

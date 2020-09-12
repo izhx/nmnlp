@@ -106,7 +106,7 @@ def merge_dicts(dicts: Union[List[Dict], Dict[str, Dict]], key_prefix='',
         for k in result:
             result[k] /= len(dicts)
 
-    return result
+    return dict(result)
 
 
 def set_visible_devices(cuda_ids: str) -> Union[torch.device, List[torch.device]]:
