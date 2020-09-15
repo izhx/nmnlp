@@ -360,6 +360,10 @@ class Trainer(object):
             if self.scheduler:
                 checkpoint['scheduler'] = self.scheduler.state_dict()
         else:
+            if hasattr(self.model, 'save'):
+                self.model.save(path)
+                output(f"===> model saved at <{path}>")
+                return
             checkpoint = self.model.state_dict()
 
         torch.save(checkpoint, path)
@@ -380,6 +384,10 @@ class Trainer(object):
             output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
                    f"from <{self.pre_train_path}>")
         else:
+            if hasattr(self.model, 'load'):
+                self.model.load(checkpoint, self.device)
+                output(f"===> Loaded model from <{self.pre_train_path}>")
+                return self
             self.model.load_state_dict(checkpoint)
             output(f"Loaded model checkpoint from <{self.pre_train_path}>")
 
