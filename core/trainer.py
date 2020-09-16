@@ -217,6 +217,8 @@ class Trainer(object):
         self.time_epoch = time.time() - time_start
 
         loss_epoch = losses.mean().item()
+        metric = self.model.metric.get_metric(reset=True)
+
         self.callbacks.after_epoch_end(locals())
 
         if self.writer:

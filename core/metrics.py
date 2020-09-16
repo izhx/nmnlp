@@ -90,14 +90,10 @@ class TaggingMetric(Metric):
         return OrderedDict(F1=f1, recall=recall, precision=precision)
 
     def get_metric(self, counter=None, reset=False) -> OrderedDict:
-        counter = counter or self.counter
-
-        recall = counter.correct / counter.total
-
-        if counter.positive > 0:
-            precision = counter.correct / counter.positive
-        else:
-            precision = 0
+        c = counter or self.counter
+        total, correct, positive = c.total, c.correct, c.positive
+        recall = 0 if total == 0 else correct / total
+        precision = 0 if positive == 0 else correct / positive
 
         if precision + recall == 0:
             f1 = 0
