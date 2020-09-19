@@ -42,7 +42,8 @@ DEVICE_CUDA = 'cuda'
 
 CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'before_batch_forward', 'after_batch_forward', 'before_next_batch',
-             'after_epoch_end', 'after_dev_end', 'before_test_start')
+             'after_epoch_end', 'after_dev_end', 'before_test_start',
+             'after_log_loss')
 
 
 def format_metric(metric: Dict) -> str:
@@ -225,7 +226,7 @@ class Trainer(object):
             scalars = dict(get_lrs(self.optimizer))
             scalars['epoch_loss'] = loss_epoch
             scalars['loss_variance'] = losses.var()
-            self.add_scalars('Train', scalars, epoch)
+            self.writer.add_scalars('Train', scalars, epoch)
 
         output(f"Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
                f"time: {sec_to_time(self.time_epoch)}, remaining: "
@@ -265,6 +266,7 @@ class Trainer(object):
             if i % log_interval == 0 and self.writer:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
                 self.writer.add_scalar('Train/loss', loss.item(), n_example)
+                self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
 
             self.callbacks.before_next_batch(locals())
 
@@ -283,7 +285,7 @@ class Trainer(object):
         info['loss_variance'] = losses.var().item()
         info['epoch_loss'] = losses.mean().item()
         if self.writer:
-            self.add_scalars('Dev', info, epoch)
+            self.writer.add_scalars('Dev', info, epoch)
             self.writer.flush()
         output(f"Eval compete, {format_metric(info)}")
 
@@ -307,6 +309,7 @@ class Trainer(object):
         loader = self.get_loader(one_set, batch_size)
         len_loader = len(loader)
         losses = torch.zeros(len_loader, device=device)
+        log_interval = max(int(len(loader) / LOG_INTERVAL_DENOMINATOR), 1)
 
         for i, (input_dict, batch) in enumerate(loader):
             input_dict, *_ = self.callbacks.after_collate_batch(input_dict, batch, locals())
@@ -320,6 +323,12 @@ class Trainer(object):
 
             losses[i] = output_dict['loss'].item()
 
+            if i % log_interval == 0 and self.writer:
+                n_example = (epoch * len(loader) + i) * loader.batch_size
+                group = 'Dev' if epoch else 'Test'
+                self.writer.add_scalar(group + '/loss', losses[i], n_example)
+                self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
+
             self.callbacks.before_next_batch(locals())
 
         metric_counter = copy.deepcopy(self.model.metric.counter)
@@ -329,7 +338,7 @@ class Trainer(object):
 
         if epoch is not None and self.writer is not None:
             metric['loss'] = losses.mean()
-            self.add_scalars('Very_Detail', metric, epoch, name)
+            self.writer.add_scalars('Very_Detail', metric, epoch, name)
             self.writer.flush()
         elif epoch is None:
             output(f"Test {name} compete, {format_metric(metric)}")
@@ -473,7 +482,7 @@ class MultiSourceTrainer(Trainer):
         info['loss_variance'] = losses.var().item()
         info['epoch_loss'] = losses.mean().item()
         if self.writer:
-            self.add_scalars('Dev', info, epoch)
+            self.writer.add_scalars('Dev', info, epoch)
             self.writer.flush()
         output(f"Eval compete, {format_metric(info)}")
 

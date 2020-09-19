@@ -8,7 +8,7 @@ import warnings
 from enum import Enum, unique
 from typing import Dict
 
-from .util import now
+from .util import now, output
 
 
 @unique
@@ -31,6 +31,7 @@ class Writer(object):
         if os.path.exists(self.log_dir):  # 一般都没有
             shutil.rmtree(self.log_dir)
         os.mkdir(self.log_dir)
+        output(f'Log dir <{self.log_dir}>')
 
         if backend in ('logviewer', 'lv', Backend.logviewer.value):
             self.type = Backend.logviewer
@@ -50,7 +51,7 @@ class Writer(object):
     def add_scalar(self, tag, scalar_value, global_step):
         if self.type in (Backend.tensorboard, Backend.logviewer):
             self.backend.add_scalar(tag, scalar_value, global_step)
-            self.writer.flush()
+            self.backend.flush()
         if self.type == Backend.fitlog:
             warnings.warn("...")
 
@@ -59,4 +60,11 @@ class Writer(object):
         for key, value in tag_scalar_dict.items():
             key = f'{key_prefix}_{key}' if key_prefix else key
             self.add_scalar(f"{main_tag}/{key}", value, global_step)
-        self.writer.flush()
+
+    def close(self):
+        if self.type == Backend.tensorboard:
+            self.backend.close()
+
+    def flush(self):
+        if self.type == Backend.tensorboard:
+            self.backend.flush()
