@@ -323,10 +323,9 @@ class Trainer(object):
 
             losses[i] = output_dict['loss'].item()
 
-            if i % log_interval == 0 and self.writer:
+            if epoch and self.writer and i % log_interval == 0:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
-                group = 'Dev' if epoch else 'Test'
-                self.writer.add_scalar(group + '/loss', losses[i], n_example)
+                self.writer.add_scalar('Dev/loss', losses[i], n_example)
                 self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
 
             self.callbacks.before_next_batch(locals())
