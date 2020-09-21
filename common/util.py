@@ -176,3 +176,6 @@ def loop(device):
         a, b = torch.rand(233, 233, 233).to(device), torch.rand(233, 233, 233).to(device)
         c = a * b
         a = c
+
+if __name__ == "__main__":
+    make_dirs()

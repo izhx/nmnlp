@@ -6,7 +6,7 @@ from typing import Dict, Tuple, Any
 import torch
 from torch.nn.functional import embedding_bag
 from torch.nn import Module, ModuleList
-from transformers import DistilBertModel, BertModel
+from transformers import BertModel
 
 from ..modules.linear import NonLinear
 from ..modules.fusion import ScalarMixWithDropout
@@ -26,15 +26,11 @@ class BertEmbedding(Module):
                  word_piece: str = 'first',  # 需要保证input ids为第一个
                  **kwargs):
         super().__init__()
-        if 'distil' in name_or_path:
-            self.bert = DistilBertModel.from_pretrained(name_or_path)
-            self.bert.transformer.output_hidden_states = True
-            self.index = 1
-        else:
-            self.bert = BertModel.from_pretrained(name_or_path)
-            self.bert.encoder.output_hidden_states = True
-            self.index = 2
+        self.bert = BertModel.from_pretrained(name_or_path)
+        self.bert.encoder.output_hidden_states = True
+        self.bert.config.output_hidden_states = True
 
+        self.index = 2
         self.layer_num = layer_num
         self.output_dim = self.bert.config.hidden_size
 
