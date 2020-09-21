@@ -148,7 +148,7 @@ def make_dirs(path=BASE_DIR):
         if not os.path.isdir(path):
             os.mkdir(path)
 
-    for n in ('dev', 'dev/cache/', 'dev/config', 'dev/data', 'dev/model'):
+    for n in ('dev', 'dev/cache/', 'dev/config', 'dev/data', 'dev/model', 'dev/tblog'):
         mkdir(n)
 
 

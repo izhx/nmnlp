@@ -27,7 +27,7 @@ class Writer(object):
     def __init__(self, log_dir: str, comment: str = '', backend: str = None, hyper_params: Dict = None):
         if not os.path.exists(os.path.abspath(log_dir)):
             os.mkdir(log_dir)
-        self.log_dir = f"{log_dir}/{comment}_{now()}/"
+        self.log_dir = f"{log_dir}/{comment}_{now().replace(' ', '_')}/"
         if os.path.exists(self.log_dir):  # 一般都没有
             shutil.rmtree(self.log_dir)
         os.mkdir(self.log_dir)

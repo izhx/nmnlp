@@ -43,7 +43,7 @@ DEVICE_CUDA = 'cuda'
 CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'before_batch_forward', 'after_batch_forward', 'before_next_batch',
              'after_epoch_end', 'after_dev_end', 'before_test_start',
-             'after_log_loss')
+             'after_log_loss', 'after_process_one')
 
 
 def format_metric(metric: Dict) -> str:
@@ -263,7 +263,7 @@ class Trainer(object):
                 if self.scheduler:
                     self.scheduler.step()
 
-            if i % log_interval == 0 and self.writer:
+            if self.writer and i % log_interval == 0:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
                 self.writer.add_scalar('Train/loss', loss.item(), n_example)
                 self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
@@ -280,13 +280,13 @@ class Trainer(object):
             metric, _, losses = self.process_one(dataset, '', self.device, self.batch_size, epoch)
 
         self.time_eval = time.time() - time_eval_start
+        self.callbacks.after_dev_end(metric, locals())
 
         info = {k: v for k, v in metric.items()}
         info['loss_variance'] = losses.var().item()
         info['epoch_loss'] = losses.mean().item()
         if self.writer:
             self.writer.add_scalars('Dev', info, epoch)
-            self.writer.flush()
         output(f"Eval compete, {format_metric(info)}")
 
         return metric
@@ -332,14 +332,9 @@ class Trainer(object):
 
         metric_counter = copy.deepcopy(self.model.metric.counter)
         metric = self.model.metric.get_metric(reset=True)
+        self.callbacks.after_process_one(metric, locals())
 
-        self.callbacks.after_dev_end(metric, locals())
-
-        if epoch is not None and self.writer is not None:
-            metric['loss'] = losses.mean()
-            self.writer.add_scalars('Very_Detail', metric, epoch, name)
-            self.writer.flush()
-        elif epoch is None:
+        if epoch is None:
             output(f"Test {name} compete, {format_metric(metric)}")
         return metric, metric_counter, losses
 
