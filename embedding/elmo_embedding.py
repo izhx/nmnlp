@@ -6,7 +6,12 @@ from typing import List
 
 import torch
 
-from allennlp.modules.elmo import Elmo, batch_to_ids
+try:
+    from allennlp.modules.elmo import Elmo, batch_to_ids
+except ModuleNotFoundError:
+    import warnings
+    warnings.warn('没有发现AllenNLP，Elmo将无法使用')
+
 
 from .scir_elmo import Embedder
 
