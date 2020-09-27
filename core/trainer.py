@@ -43,7 +43,8 @@ DEVICE_CUDA = 'cuda'
 CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'before_batch_forward', 'after_batch_forward', 'before_next_batch',
              'after_epoch_end', 'after_dev_end', 'before_test_start',
-             'after_log_loss', 'after_process_one')
+             'after_log_loss', 'after_process_one', 'before_train_once',
+             'after_train_once')
 
 
 def format_metric(metric: Dict) -> str:
@@ -165,7 +166,9 @@ class Trainer(object):
         # 当代数小于指定数目 且 没有early stop时，持续循环
         while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
+            self.callbacks.before_train_once(locals())
             self._train_once(epoch, train_loader, step)
+            self.callbacks.after_train_once(locals())
 
             # 重新读取配置文件并刷新
             self.reload_cfg()
@@ -208,13 +211,20 @@ class Trainer(object):
             self.writer.close()
         return run_flag  # 若早停，返回false
 
-    def _train_once(self, epoch: int, loader, step: bool):
+    def _train_once(
+        self, epoch: int, loader: DataLoader, step: bool,
+        forward_func: Callable = None, scalar_group: str = 'Train'
+    ):
+        """
+        Train the model with forward_func.
+        """
+        forward_func = forward_func or self.model.forward
         self.model.to(self.device)
         self.model.train()
         self.callbacks.before_epoch_start(locals())
 
         time_start = time.time()
-        losses = self.train_func(loader, epoch, step)
+        losses = self.train_func(loader, epoch, step, forward_func, scalar_group)
         self.time_epoch = time.time() - time_start
 
         loss_epoch = losses.mean().item()
@@ -226,13 +236,14 @@ class Trainer(object):
             scalars = dict(get_lrs(self.optimizer))
             scalars['epoch_loss'] = loss_epoch
             scalars['loss_variance'] = losses.var()
-            self.writer.add_scalars('Train', scalars, epoch)
+            self.writer.add_scalars(scalar_group, scalars, epoch)
 
-        output(f"Epoch {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
-               f"time: {sec_to_time(self.time_epoch)}, remaining: "
-               f"{sec_to_time(self.time_left(epoch))}.")
+        output(f"{scalar_group} {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+               f"time: {sec_to_time(self.time_epoch)}")
 
-    def train_func(self, loader, epoch, step) -> torch.Tensor:
+    def train_func(
+        self, loader: DataLoader, epoch: int, step: bool, forward_func: Callable, scalar_group: str,
+    ) -> torch.Tensor:
         """ the training procedure of one epoch.
         """
         losses = torch.zeros(len(loader), device=self.device)
@@ -245,7 +256,7 @@ class Trainer(object):
 
             input_dict, *_ = self.callbacks.before_batch_forward(input_dict, locals())
 
-            output_dict = self.model(**input_dict)
+            output_dict = forward_func(**input_dict)
 
             output_dict, *_ = self.callbacks.after_batch_forward(output_dict, locals())
 
@@ -265,7 +276,7 @@ class Trainer(object):
 
             if self.writer and i % log_interval == 0:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
-                self.writer.add_scalar('Train/loss', loss.item(), n_example)
+                self.writer.add_scalar(f'{scalar_group}/loss', loss.item(), n_example)
                 self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
 
             self.callbacks.before_next_batch(locals())
@@ -406,34 +417,6 @@ class Trainer(object):
             if key in self.cfg['trainer']:
                 self.__setattr__(key, self.cfg['trainer'][key])
         return
-
-    # def before_epoch_start(self, local_dict):
-    #     """
-    #     """
-    #     pass
-
-    # def after_collate_batch(self, input_dict, batch, local_dict):
-    #     """
-    #     在dataloader获取到一个batch数据后调用。
-    #     """
-    #     pass
-
-    # def after_batch_forward(self, input_dict, output_dict, local_dict):
-    #     """
-    #     模型forword之后，反向传播等之前。
-    #     """
-    #     pass
-
-    # def before_next_batch(self, local_dict):
-    #     """
-    #     反向传播、log之后，加载下一batch前。
-    #     """
-    #     pass
-
-    # def after_epoch_end(self, local_dict):
-    #     """
-    #     """
-    #     pass
 
 
 class MultiSourceTrainer(Trainer):
