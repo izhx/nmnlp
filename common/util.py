@@ -18,8 +18,9 @@ MG_GB = 1024
 BASE_DIR = './'
 
 
-def now():
-    return str(datetime.now())[:-7]
+def now(replace=False) -> str:
+    now_str = str(datetime.now())[:-7]
+    return now_str.replace(' ', '_') if replace else now_str
 
 
 def output(*args):
@@ -176,6 +177,7 @@ def loop(device):
         a, b = torch.rand(233, 233, 233).to(device), torch.rand(233, 233, 233).to(device)
         c = a * b
         a = c
+
 
 if __name__ == "__main__":
     make_dirs()

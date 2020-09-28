@@ -314,7 +314,7 @@ class Trainer(object):
 
         return metric
 
-    def process_one(self, one_set, name, device, batch_size, epoch=None):
+    def process_one(self, one_set, name, device, batch_size, epoch=None, scalar_group='Dev'):
         """ epoch is None means test stage.
         """
         loader = self.get_loader(one_set, batch_size)
@@ -336,7 +336,7 @@ class Trainer(object):
 
             if epoch and self.writer and i % log_interval == 0:
                 n_example = (epoch * len(loader) + i) * loader.batch_size
-                self.writer.add_scalar('Dev/loss', losses[i], n_example)
+                self.writer.add_scalar(scalar_group + '/loss', losses[i], n_example)
                 self.callbacks.after_log_loss(output_dict, self.writer, n_example, locals())
 
             self.callbacks.before_next_batch(locals())
