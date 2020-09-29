@@ -357,12 +357,14 @@ class Trainer(object):
         post_fix = 'bac' if self.save_not_only_model else 'pth'
 
         if comment is None:
-            path = os.path.normpath(f"{self.save_dir}/{self.prefix}_{epoch}.{post_fix}")
+            self.pre_train_path = os.path.normpath(
+                f"{self.save_dir}/{self.prefix}_{epoch}.{post_fix}")
         else:
-            path = os.path.normpath(f"{self.save_dir}/{self.prefix}_{comment}.{post_fix}")
+            self.pre_train_path = os.path.normpath(
+                f"{self.save_dir}/{self.prefix}_{comment}.{post_fix}")
 
         if self.save_not_only_model:
-            self.cfg['trainer']['pre_train_path'] = path
+            self.cfg['trainer']['pre_train_path'] = self.pre_train_path
             self.cfg['trainer']['epoch_start'] = epoch + 1
 
             checkpoint = {
@@ -377,15 +379,14 @@ class Trainer(object):
                 checkpoint['scheduler'] = self.scheduler.state_dict()
         else:
             if hasattr(self.model, 'save'):
-                self.model.save(path)
-                output(f"===> model saved at <{path}>")
+                self.model.save(self.pre_train_path)
+                output(f"===> model saved at <{self.pre_train_path}>")
                 return
             checkpoint = self.model.state_dict()
 
-        torch.save(checkpoint, path)
+        torch.save(checkpoint, self.pre_train_path)
         save_yaml(self.cfg)
-        self.pre_train_path = path
-        output(f"===> Checkpoint saved at <{path}>")
+        output(f"===> Checkpoint saved at <{self.pre_train_path}>")
 
     def load(self):
         checkpoint = torch.load(self.pre_train_path, map_location=self.device)
