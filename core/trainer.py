@@ -302,15 +302,17 @@ class Trainer(object):
 
         return metric
 
-    def test(self, dataset: DataSet,
-             batch_size: int = 0, device: torch.device = None):
+    def test(
+        self, dataset: DataSet, batch_size: int = 0,
+        device: torch.device = None, comment: str = ''
+    ) -> Dict[str, float]:
         device = self.device if device is None else device
 
         self.callbacks.before_test_start(dataset, self, locals())
 
         self.model.train(False)  # equal to `self.model.eval()`
         with torch.no_grad():
-            metric, *_ = self.process_one(dataset, '', device, batch_size)
+            metric, *_ = self.process_one(dataset, comment, device, batch_size)
 
         return metric
 
