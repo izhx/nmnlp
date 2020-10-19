@@ -46,6 +46,8 @@ class LstmEncoder(Module):
                                       enforce_sorted=False)
         if 'domain_id' in kwargs:
             feat, _ = self.lstm(inputs, domain_id=kwargs['domain_id'])
+        elif 'domain_emb' in kwargs:
+            feat, _ = self.lstm(inputs, domain_emb=kwargs['domain_emb'])
         else:
             feat, _ = self.lstm(inputs)  # -> [N,L,C]
         feat, _ = pad_packed_sequence(feat, batch_first=self.lstm.batch_first)
@@ -89,7 +91,7 @@ class PGLSTM(Module):
                           "num_layers={}".format(dropout, num_layers))
 
         # the language embedding in the paper. I(M)
-        self.domain_embedding = Embedding(num_domains, domain_dim)
+        self.domain_embedding = Embedding(num_domains, domain_dim, max_norm=1.0)
 
         if group_dims is not None:
             if len(group_dims) == 1:
@@ -222,13 +224,14 @@ class PGLSTM(Module):
             return hx
         return apply_permutation(hx[0], permutation), apply_permutation(hx[1], permutation)
 
-    def forward(self, input: torch.Tensor, domain_id: torch.LongTensor, hx=None):  # noqa: F811
+    def forward(
+        self, input: torch.Tensor, domain_id: torch.LongTensor = None,
+        domain_emb: torch.Tensor = None, hx=None
+    ):  # noqa: F811
         """ one domain one time.
         """
-        if 0 <= domain_id < self.domain_embedding.num_embeddings:
+        if domain_emb is None:
             domain_emb = self.domain_embedding(domain_id)
-        else:
-            raise ValueError(f"invalid domain id <{domain_id}>")
 
         # generate weights using domain embedding
         if self.controller is None:
