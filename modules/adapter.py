@@ -17,6 +17,11 @@ from torch.nn.functional import embedding_bag, linear
 from transformers.modeling_bert import BertModel
 
 
+def set_requires_grad(module: nn.Module, status: bool = False):
+    for param in module.parameters():
+        param.requires_grad = False
+
+
 class Adapter(nn.Module):
     def __init__(self, in_features, bottleneck_size, external_param=False):
         super().__init__()
@@ -80,8 +85,7 @@ class AdapterBertModel(nn.Module):
         super().__init__()
         self.bert = BertModel.from_pretrained(name_or_path)
 
-        for param in self.bert.parameters():
-            param.requires_grad = False
+        set_requires_grad(self.bert, False)
 
         self.adapters = nn.ModuleList([
             Adapter(self.bert.config.hidden_size, adapter_size, external_param)
@@ -91,8 +95,10 @@ class AdapterBertModel(nn.Module):
         for i, layer in enumerate(self.bert.encoder.layer):
             layer.output = AdapterBertOutput(
                 layer.output, self.adapters[i * 2].forward)
+            set_requires_grad(layer.output.LayerNorm, True)
             layer.attention.output = AdapterBertOutput(
                 layer.attention.output, self.adapters[i * 2 + 1].forward)
+            set_requires_grad(layer.attention.output.LayerNorm, True)
 
         self.output_dim = self.bert.config.hidden_size
 
