@@ -46,6 +46,8 @@ CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'after_log_loss', 'after_process_one', 'before_train_once',
              'after_train_once')
 
+CLIP_GRAD = dict(method='norm', max_norm=5.0)
+
 
 def format_metric(metric: Dict) -> str:
     info = reversed([f"{k}: {v:.4f}" for k, v in metric.items()])
@@ -85,7 +87,7 @@ class Trainer(object):
                  scheduler: Any = None,  # _LRScheduler is protected
                  writer: Writer = None,
                  device: str = DEVICE_CPU,
-                 clip_grad: Dict = None,
+                 clip_grad: Dict = CLIP_GRAD,
                  batch_size: int = 1,
                  early_stop: bool = True,
                  epoch_num: int = 100,

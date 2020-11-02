@@ -7,7 +7,7 @@ https://github.com/google-research/adapter-bert
 """
 
 import math
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Union
 
 import torch
 import torch.nn as nn
@@ -80,25 +80,35 @@ class AdapterBertModel(nn.Module):
                  freeze: str = 'all',
                  word_piece: str = 'first',  # 需要保证input ids为第一个
                  adapter_size: int = 128,
-                 external_param: bool = False,
+                 external_param: Union[bool, List[bool]] = False,
                  **kwargs):
         super().__init__()
         self.bert = BertModel.from_pretrained(name_or_path)
 
         set_requires_grad(self.bert, False)
 
-        self.adapters = nn.ModuleList([
-            Adapter(self.bert.config.hidden_size, adapter_size, external_param)
-            for _ in range(self.bert.config.num_hidden_layers * 2)
+        if isinstance(external_param, bool):
+            param_place = [external_param for _ in range(
+                self.bert.config.num_hidden_layers)]
+        elif isinstance(external_param, list):
+            param_place = [False for _ in range(
+                self.bert.config.num_hidden_layers)]
+            for i, e in enumerate(external_param, 1):
+                param_place[-i] = e
+
+        self.adapters = nn.ModuleList([nn.ModuleList([
+                Adapter(self.bert.config.hidden_size, adapter_size, e),
+                Adapter(self.bert.config.hidden_size, adapter_size, e)
+            ]) for e in param_place
         ])
 
         for i, layer in enumerate(self.bert.encoder.layer):
             layer.output = AdapterBertOutput(
-                layer.output, self.adapters[i * 2].forward)
-            set_requires_grad(layer.output.LayerNorm, True)
+                layer.output, self.adapters[i][0].forward)
+            set_requires_grad(layer.output.base.LayerNorm, True)
             layer.attention.output = AdapterBertOutput(
-                layer.attention.output, self.adapters[i * 2 + 1].forward)
-            set_requires_grad(layer.attention.output.LayerNorm, True)
+                layer.attention.output, self.adapters[i][1].forward)
+            set_requires_grad(layer.attention.output.base.LayerNorm, True)
 
         self.output_dim = self.bert.config.hidden_size
 
