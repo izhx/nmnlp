@@ -19,7 +19,7 @@ from transformers.modeling_bert import BertModel
 
 def set_requires_grad(module: nn.Module, status: bool = False):
     for param in module.parameters():
-        param.requires_grad = False
+        param.requires_grad = status
 
 
 class Adapter(nn.Module):
