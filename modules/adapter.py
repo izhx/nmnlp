@@ -77,9 +77,9 @@ class AdapterBertOutput(nn.Module):
 class AdapterBertModel(nn.Module):
     def __init__(self,
                  name_or_path_or_model: Union[str, BertModel],
-                 word_piece: str = 'first',  # 需要保证input ids为第一个
                  adapter_size: int = 128,
                  external_param: Union[bool, List[bool]] = False,
+                 word_piece: str = 'first',  # 需要保证input ids为第一个
                  **kwargs):
         super().__init__()
         if isinstance(name_or_path_or_model, str):
