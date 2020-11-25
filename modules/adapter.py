@@ -76,14 +76,16 @@ class AdapterBertOutput(nn.Module):
 
 class AdapterBertModel(nn.Module):
     def __init__(self,
-                 name_or_path: str,
-                 freeze: str = 'all',
+                 name_or_path_or_model: Union[str, BertModel],
                  word_piece: str = 'first',  # 需要保证input ids为第一个
                  adapter_size: int = 128,
                  external_param: Union[bool, List[bool]] = False,
                  **kwargs):
         super().__init__()
-        self.bert = BertModel.from_pretrained(name_or_path)
+        if isinstance(name_or_path_or_model, str):
+            self.bert = BertModel.from_pretrained(name_or_path_or_model)
+        else:
+            self.bert = name_or_path_or_model
 
         set_requires_grad(self.bert, False)
 
