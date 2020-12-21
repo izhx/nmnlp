@@ -22,12 +22,20 @@ def set_requires_grad(module: nn.Module, status: bool = False):
         param.requires_grad = status
 
 
+def batch_linear(x: torch.Tensor, w: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """ batched linear forward """
+    y = torch.einsum("bth,boh->bto", x, w)
+    y = y + b.unsqueeze(1)
+    return y
+
+
 class Adapter(nn.Module):
     def __init__(self, in_features, bottleneck_size, external_param=False):
         super().__init__()
         self.in_features = in_features
         self.bottleneck_size = bottleneck_size
         self.act_fn = nn.GELU()
+
         if external_param:
             self.params = [None, None, None, None]
         else:
@@ -50,9 +58,10 @@ class Adapter(nn.Module):
         init_linear(self.params[2], self.params[3])
 
     def forward(self, hidden_states: torch.Tensor):
-        x = linear(hidden_states, self.params[0], self.params[1])
+        linear_forward = batch_linear if self.params[0].dim() == 3 else linear
+        x = linear_forward(hidden_states, self.params[0], self.params[1])
         x = self.act_fn(x)
-        x = linear(x, self.params[2], self.params[3])
+        x = linear_forward(x, self.params[2], self.params[3])
         x = x + hidden_states
         return x
 
@@ -97,6 +106,8 @@ class AdapterBertModel(nn.Module):
                 self.bert.config.num_hidden_layers)]
             for i, e in enumerate(external_param, 1):
                 param_place[-i] = e
+        else:
+            raise ValueError("wrong type of external_param!")
 
         self.adapters = nn.ModuleList([nn.ModuleList([
                 Adapter(self.bert.config.hidden_size, adapter_size, e),
@@ -118,11 +129,10 @@ class AdapterBertModel(nn.Module):
             self.word_piece = None
         else:  # mean of pieces
             offset = torch.tensor([0], dtype=torch.long)
-            # self.register_buffer("offset", offset)
             self.word_piece = lambda x: embedding_bag(
                 x, self.bert.embeddings.word_embeddings.weight, offset.to(x.device))
 
-    def forward(self,  # pylint:disable=arguments-differ
+    def forward(self,
                 input_ids: torch.Tensor,
                 word_pieces: Dict[Tuple[int], torch.LongTensor] = None,
                 mask: torch.Tensor = None,
