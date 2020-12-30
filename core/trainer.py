@@ -95,15 +95,10 @@ class Trainer(object):
                  test_every: int = 0,
                  update_every: int = 1,
                  validate_every: int = 1,
-                 validate_after: int = 0,
                  save_after: int = 0,
                  save_dir: str = DEFAULT_MODEL_SAVE_DIR,
                  save_not_only_model: bool = False,
                  save_strategy: str = SAVE_STRATEGY_BEST,
-                 tensorboard: bool = False,
-                 log_batch: bool = False,
-                 log_dir: str = DEFAULT_LOG_DIR,
-                 log_interval: int = 100,
                  prefix: str = DEFAULT_PREFIX,
                  pre_train_path: str = None,
                  **kwargs):
@@ -219,7 +214,7 @@ class Trainer(object):
         forward_func = forward_func or self.model.forward
         loader = self.get_loader(
             self.dataset.train, shuffle=self.sampler is None, sampler=self.sampler)
-        output(f"batch num : {len(loader)}.")
+        output(f"Epoch: {epoch}, batch num: {len(loader)}.")
         self.model.to(self.device)
         self.model.train()
         self.callbacks.before_epoch_start(locals())

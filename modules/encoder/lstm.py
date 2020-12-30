@@ -39,18 +39,20 @@ class LstmEncoder(Module):
                                bidirectional, **pgn)
         self.output_dim = hidden_size * 2 if bidirectional else hidden_size
 
-    def forward(self, inputs, lengths, **kwargs):  # pylint:disable=arguments-differ
-        inputs = pack_padded_sequence(inputs,
-                                      lengths,
-                                      batch_first=self.lstm.batch_first,
-                                      enforce_sorted=False)
+    def forward(self, inputs, lengths=None, **kwargs):  # pylint:disable=arguments-differ
+        if lengths is not None:
+            inputs = pack_padded_sequence(
+                inputs, lengths, batch_first=self.lstm.batch_first, enforce_sorted=False)
+
         if 'domain_id' in kwargs:
             feat, _ = self.lstm(inputs, domain_id=kwargs['domain_id'])
         elif 'domain_emb' in kwargs:
             feat, _ = self.lstm(inputs, domain_emb=kwargs['domain_emb'])
         else:
             feat, _ = self.lstm(inputs)  # -> [N,L,C]
-        feat, _ = pad_packed_sequence(feat, batch_first=self.lstm.batch_first)
+
+        if lengths is not None:
+            feat, _ = pad_packed_sequence(feat, batch_first=self.lstm.batch_first)
         return feat
 
 

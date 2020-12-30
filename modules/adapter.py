@@ -134,8 +134,8 @@ class AdapterBertModel(nn.Module):
 
     def forward(self,
                 input_ids: torch.Tensor,
-                word_pieces: Dict[Tuple[int], torch.LongTensor] = None,
                 mask: torch.Tensor = None,
+                word_pieces: Dict[Tuple[int], torch.LongTensor] = None,
                 **kwargs) -> torch.Tensor:
         inputs_embeds = self.bert.embeddings.word_embeddings(input_ids)
         if self.word_piece is not None and word_pieces is not None:
