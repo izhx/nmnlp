@@ -371,8 +371,6 @@ class Trainer(object):
                 'cfg': self.cfg,
                 'epoch': epoch
             }
-            if self.writer.log_dir:
-                checkpoint['log_dir'] = self.log_dir
             if self.scheduler:
                 checkpoint['scheduler'] = self.scheduler.state_dict()
         else:

@@ -6,12 +6,10 @@ https://arxiv.org/abs/1902.00751
 https://github.com/google-research/adapter-bert
 """
 
-import math
 from typing import Dict, Tuple, List, Union
 
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 from torch.nn.functional import embedding_bag, linear
 
 from transformers.modeling_bert import BertModel
@@ -41,21 +39,15 @@ class Adapter(nn.Module):
         else:
             self.params = nn.ParameterList([
                 nn.Parameter(torch.Tensor(bottleneck_size, in_features)),
-                nn.Parameter(torch.Tensor(bottleneck_size)),
+                nn.Parameter(torch.zeros(bottleneck_size)),
                 nn.Parameter(torch.Tensor(in_features, bottleneck_size)),
-                nn.Parameter(torch.Tensor(in_features))
+                nn.Parameter(torch.zeros(in_features))
             ])
             self.reset_parameters()
 
     def reset_parameters(self):
-        def init_linear(w, b):
-            init.kaiming_uniform_(w, a=math.sqrt(5))
-            fan_in, _ = init._calculate_fan_in_and_fan_out(w)
-            bound = 1 / math.sqrt(fan_in)
-            init.uniform_(b, -bound, bound)
-
-        init_linear(self.params[0], self.params[1])
-        init_linear(self.params[2], self.params[3])
+        nn.init.normal_(self.params[0], std=1e-3)
+        nn.init.normal_(self.params[2], std=1e-3)
 
     def forward(self, hidden_states: torch.Tensor):
         linear_forward = batch_linear if self.params[0].dim() == 3 else linear
