@@ -79,6 +79,7 @@ class AdapterBertModel(nn.Module):
     def __init__(self,
                  name_or_path_or_model: Union[str, BertModel],
                  adapter_size: int = 128,
+                 adapter_num: int = 12,
                  external_param: Union[bool, List[bool]] = False,
                  word_piece: str = 'first',  # 需要保证input ids为第一个
                  **kwargs):
@@ -91,28 +92,25 @@ class AdapterBertModel(nn.Module):
         set_requires_grad(self.bert, False)
 
         if isinstance(external_param, bool):
-            param_place = [external_param for _ in range(
-                self.bert.config.num_hidden_layers)]
+            param_place = [external_param for _ in range(adapter_num)]
         elif isinstance(external_param, list):
-            param_place = [False for _ in range(
-                self.bert.config.num_hidden_layers)]
+            param_place = [False for _ in range(adapter_num)]
             for i, e in enumerate(external_param, 1):
                 param_place[-i] = e
         else:
             raise ValueError("wrong type of external_param!")
 
         self.adapters = nn.ModuleList([nn.ModuleList([
-                Adapter(self.bert.config.hidden_size, adapter_size, e),
-                Adapter(self.bert.config.hidden_size, adapter_size, e)
-            ]) for e in param_place
+                Adapter(self.bert.config.hidden_size, adapter_size, param_place[i]),
+                Adapter(self.bert.config.hidden_size, adapter_size, param_place[i])
+            ]) for i in range(adapter_num)
         ])
 
-        for i, layer in enumerate(self.bert.encoder.layer):
-            layer.output = AdapterBertOutput(
-                layer.output, self.adapters[i][0].forward)
+        for i, adapters in enumerate(self.adapters, 1):
+            layer = self.bert.encoder.layer[-i]
+            layer.output = AdapterBertOutput(layer.output, adapters[0].forward)
             set_requires_grad(layer.output.base.LayerNorm, True)
-            layer.attention.output = AdapterBertOutput(
-                layer.attention.output, self.adapters[i][1].forward)
+            layer.attention.output = AdapterBertOutput(layer.attention.output, adapters[1].forward)
             set_requires_grad(layer.attention.output.base.LayerNorm, True)
 
         self.output_dim = self.bert.config.hidden_size
