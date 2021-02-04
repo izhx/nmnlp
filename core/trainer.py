@@ -95,15 +95,10 @@ class Trainer(object):
                  test_every: int = 0,
                  update_every: int = 1,
                  validate_every: int = 1,
-                 validate_after: int = 0,
                  save_after: int = 0,
                  save_dir: str = DEFAULT_MODEL_SAVE_DIR,
                  save_not_only_model: bool = False,
                  save_strategy: str = SAVE_STRATEGY_BEST,
-                 tensorboard: bool = False,
-                 log_batch: bool = False,
-                 log_dir: str = DEFAULT_LOG_DIR,
-                 log_interval: int = 100,
                  prefix: str = DEFAULT_PREFIX,
                  pre_train_path: str = None,
                  **kwargs):
@@ -147,15 +142,12 @@ class Trainer(object):
         return time_left
 
     def get_loader(self, dataset: Union[DataSet, Dict], batch_size: int = 0, shuffle: bool = False,
-                   sampler: Sampler = None):
+                   sampler: Sampler = None) -> DataLoader:
         batch_size = self.batch_size if batch_size == 0 else batch_size
         return DataLoader(dataset, batch_size, shuffle, sampler,
                           collate_fn=dataset.collate_fn)
 
     def train(self) -> bool:
-        train_loader = self.get_loader(
-            self.dataset.train, shuffle=self.sampler is None, sampler=self.sampler)
-        output(f"batch num (per epoch): {len(train_loader)}")
         run_flag = True  # 是否继续训练
         epoch, best_epoch, stop_counter = self.epoch_start, 0, 0
         last_metric = None
@@ -169,7 +161,7 @@ class Trainer(object):
         while epoch <= self.epoch_num and run_flag:
             step = bool((epoch + 1) % self.update_every == 0)  # 是否反向传播
             self.callbacks.before_train_once(locals())
-            self._train_once(epoch, train_loader, step)
+            self._train_once(epoch, step)
             self.callbacks.after_train_once(locals())
 
             # 重新读取配置文件并刷新
@@ -214,13 +206,15 @@ class Trainer(object):
         return run_flag  # 若早停，返回false
 
     def _train_once(
-        self, epoch: int, loader: DataLoader, step: bool,
-        forward_func: Callable = None, scalar_group: str = 'Train'
+        self, epoch: int, step: bool, forward_func: Callable = None, scalar_group: str = 'Train'
     ):
         """
         Train the model with forward_func.
         """
         forward_func = forward_func or self.model.forward
+        loader = self.get_loader(
+            self.dataset.train, shuffle=self.sampler is None, sampler=self.sampler)
+        output(f"Epoch: {epoch}, batch num: {len(loader)}.")
         self.model.to(self.device)
         self.model.train()
         self.callbacks.before_epoch_start(locals())
@@ -377,8 +371,6 @@ class Trainer(object):
                 'cfg': self.cfg,
                 'epoch': epoch
             }
-            if self.writer.log_dir:
-                checkpoint['log_dir'] = self.log_dir
             if self.scheduler:
                 checkpoint['scheduler'] = self.scheduler.state_dict()
         else:
