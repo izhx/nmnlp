@@ -6,13 +6,13 @@ https://arxiv.org/abs/1902.00751
 https://github.com/google-research/adapter-bert
 """
 
-from typing import Dict, Tuple, List, Union
+from typing import List, Union
 
 import torch
 import torch.nn as nn
 from torch.nn.functional import embedding_bag, linear
 
-from transformers.modeling_bert import BertModel
+from transformers.models.bert.modeling_bert import BertModel
 
 
 def set_requires_grad(module: nn.Module, status: bool = False):
@@ -82,6 +82,7 @@ class AdapterBertModel(nn.Module):
                  adapter_num: int = 12,
                  external_param: Union[bool, List[bool]] = False,
                  word_piece: str = 'first',  # 需要保证input ids为第一个
+                 # mix_out: bool = False,
                  **kwargs):
         super().__init__()
         if isinstance(name_or_path_or_model, str):
@@ -106,6 +107,11 @@ class AdapterBertModel(nn.Module):
             ]) for i in range(adapter_num)
         ])
 
+        # if mix_out:
+        #     self.weights = nn.Parameter(torch.ones(adapter_num))
+        # else:
+        #     self.weights = None
+
         for i, adapters in enumerate(self.adapters, 1):
             layer = self.bert.encoder.layer[-i]
             layer.output = AdapterBertOutput(layer.output, adapters[0].forward)
@@ -114,24 +120,54 @@ class AdapterBertModel(nn.Module):
             set_requires_grad(layer.attention.output.base.LayerNorm, True)
 
         self.output_dim = self.bert.config.hidden_size
+        self.word_piece = word_piece
 
-        if word_piece == 'first':
-            self.word_piece = None
-        else:  # mean of pieces
-            offset = torch.tensor([0], dtype=torch.long)
-            self.word_piece = lambda x: embedding_bag(
-                x, self.bert.embeddings.word_embeddings.weight, offset.to(x.device))
-
-    def forward(self,
-                input_ids: torch.Tensor,
-                mask: torch.Tensor = None,
-                word_pieces: Dict[Tuple[int], torch.LongTensor] = None,
-                **kwargs) -> torch.Tensor:
+    def forward(
+        self, input_ids: torch.Tensor, mask: torch.Tensor = None,
+        word_pieces=None, lengths=None, **kwargs
+    ) -> torch.Tensor:
         inputs_embeds = self.bert.embeddings.word_embeddings(input_ids)
-        if self.word_piece is not None and word_pieces is not None:
-            for (s, w), pieces in word_pieces.items():
-                inputs_embeds[s, w, :] = self.word_piece(pieces)
-
+        if word_pieces is not None:
+            inputs_embeds = self.merge_piece_emb(word_pieces, inputs_embeds)
         attention_mask = None if mask is None else mask.float()
+
         bert_output = self.bert(attention_mask=attention_mask, inputs_embeds=inputs_embeds)
-        return bert_output[0]
+
+        bert_representation = self.merge_piece_out(word_pieces, bert_output[0], lengths)
+        return bert_representation
+
+    def merge_piece_emb(self, pieces, inputs):
+        if self.word_piece == 'embedding':
+            offset = torch.tensor([0], dtype=torch.long)
+            for (s, w), p in pieces.items():
+                inputs[s, w, :] = embedding_bag(
+                    p, self.bert.embeddings.word_embeddings.weight,
+                    offset.to(p.device))
+        return inputs
+
+    def merge_piece_out(self, pieces, output, lengths: torch.LongTensor):
+        """
+        piece: [ {start: l_span, ...}, {start: l_span, ...}, ..., [len1, ...]]
+        """
+        if self.word_piece != 'output':
+            return output
+
+        representations, pad_len = list(), lengths.max().item()
+        for i, (out, ps) in enumerate(zip(output, pieces)):
+            origin_len, bert_len = lengths[i].item(), out.size(0)
+            j, rep_i = 0, list()
+            while j < bert_len:
+                out_j = out[j]
+                if j in ps:
+                    out_j = out[j: j + ps[j]].mean(dim=0)
+                    j += ps[j]
+                else:
+                    j += 1
+                rep_i.append(out_j)
+                if len(rep_i) == origin_len:
+                    break
+            while len(rep_i) < pad_len:
+                rep_i.append(torch.zeros_like(rep_i[0]))
+            representations.append(torch.stack(rep_i))
+        representations = torch.stack(representations)
+        return representations

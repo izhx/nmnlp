@@ -42,7 +42,8 @@ class LstmEncoder(Module):
     def forward(self, inputs, lengths=None, domain_id=None, domain_emb=None):  # pylint:disable=arguments-differ
         if lengths is not None:
             inputs = pack_padded_sequence(
-                inputs, lengths, batch_first=self.lstm.batch_first, enforce_sorted=False)
+                inputs, lengths.cpu(), batch_first=self.lstm.batch_first,
+                enforce_sorted=False)
 
         if domain_id is not None:
             feat, _ = self.lstm(inputs, domain_id=domain_id)

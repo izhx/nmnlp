@@ -88,7 +88,7 @@ class Trainer(object):
                  writer: Writer = None,
                  device: str = DEVICE_CPU,
                  clip_grad: Dict = CLIP_GRAD,
-                 batch_size: int = 1,
+                 batch_size: int = 32,
                  early_stop: bool = True,
                  epoch_num: int = 100,
                  epoch_start: int = 0,

@@ -31,8 +31,8 @@ class Vocabulary(object):
                  oov_token: str = DEFAULT_OOV_TOKEN):
         """
         """
-        # min_count = min_count or dict()
-        # pretrained_files = pretrained_files or {}
+        min_count = min_count or dict()
+        pretrained_files = pretrained_files or dict()
         self.padding_token = padding_token
         self.oov_token = oov_token
         self.counter = field_token_counts
@@ -160,7 +160,7 @@ class Vocabulary(object):
 
 def _read_pretrained_tokens(embeddings_file: str) -> List[str]:
     # Moving this import to the top breaks everything (cycling import, I guess)
-    from ..modules.embedding.embedding import EmbeddingsTextFile
+    from ..embedding.embedding import EmbeddingsTextFile
 
     output(f'Reading pretrained tokens from: <{embeddings_file}>')
     tokens: List[str] = []

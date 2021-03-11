@@ -16,10 +16,10 @@ class DataSet(Dataset):
     """
     data container.
     """
-    index_fields: Set[str]  # 需要index的field，也就是建立词表的
+    index_fields: Set[str] = None  # 需要index的field，也就是建立词表的
 
-    def __init__(self, data: Iterable, pretrained_fields: Set[str] = ()):
-        self.data = data
+    def __init__(self, data: Iterable = None, pretrained_fields: Set[str] = ()):
+        self.data = data or list()
         self.pretrained_fields = pretrained_fields
         self.indexed = False
         self.vec_fields = list()

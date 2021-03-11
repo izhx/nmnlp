@@ -1,8 +1,8 @@
 """
 """
 
+from typing import Dict
 from argparse import Namespace
-from collections import OrderedDict
 
 import torch
 
@@ -29,7 +29,7 @@ class Metric(object):
         self.counter = self.counter_factory()
         self.best = None
 
-    def is_best(self, metric: OrderedDict) -> bool:
+    def is_best(self, metric: Dict) -> bool:
         """
         根据key的顺序比较metric，在前者优先，默认数值越大越好。
         """
@@ -39,13 +39,13 @@ class Metric(object):
         return False
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
-                 mask: torch.LongTensor) -> OrderedDict:
+                 mask: torch.LongTensor) -> Dict:
         """
         每个batch调用，更新counter，计算当前batch的分数并返回。
         """
         raise NotImplementedError
 
-    def get_metric(self, counter=None, reset=False) -> OrderedDict:
+    def get_metric(self, counter=None, reset=False) -> Dict:
         """
         用counter计算出metric。
         """
@@ -56,7 +56,7 @@ class Metric(object):
         raise NotImplementedError
 
     @staticmethod
-    def metric_factory(**kwargs) -> OrderedDict:
+    def metric_factory(**kwargs) -> Dict:
         """
         注意按重要性排列参数。
         """
@@ -69,7 +69,7 @@ class TaggingMetric(Metric):
         self.ignore_index = ignore_index
 
     def __call__(self, predictions: torch.Tensor, gold_labels: torch.Tensor,
-                 mask: torch.LongTensor) -> OrderedDict:
+                 mask: torch.LongTensor) -> Dict:
         batch = self.counter_factory()
 
         mask = (gold_labels != self.ignore_index).long() * mask  # 只看标注
@@ -86,10 +86,10 @@ class TaggingMetric(Metric):
         return Namespace(total=total, positive=positive, correct=correct)
 
     @staticmethod
-    def metric_factory(f1=.0, recall=.0, precision=.0) -> OrderedDict:
-        return OrderedDict(F1=f1, recall=recall, precision=precision)
+    def metric_factory(f1=.0, recall=.0, precision=.0) -> Dict:
+        return Dict(F1=f1, recall=recall, precision=precision)
 
-    def get_metric(self, counter=None, reset=False) -> OrderedDict:
+    def get_metric(self, counter=None, reset=False) -> Dict:
         c = counter or self.counter
         total, correct, positive = c.total, c.correct, c.positive
         recall = 0 if total == 0 else correct / total
