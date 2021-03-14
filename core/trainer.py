@@ -165,8 +165,7 @@ class Trainer(object):
             self.callbacks.after_train_once(locals())
 
             # 重新读取配置文件并刷新
-            if self.cfg is not None:
-                self.reload_cfg()
+            self.reload_cfg()
 
             # 如果达到验证间隔
             if (epoch + 1) % self.validate_every == 0:
@@ -408,13 +407,12 @@ class Trainer(object):
         return self
 
     def reload_cfg(self):
-        self.cfg = load_yaml(self.cfg['path'])
-
-        for key in ('epoch_num', 'validate_every', 'save_after',
-                    'save_strategy', 'log_batch', 'log_interval'):
-            if key in self.cfg['trainer']:
-                self.__setattr__(key, self.cfg['trainer'][key])
-        return
+        if self.cfg is not None:
+            self.cfg = load_yaml(self.cfg['path'])
+            for key in ('epoch_num', 'validate_every', 'save_after',
+                        'save_strategy', 'log_batch', 'log_interval'):
+                if key in self.cfg['trainer']:
+                    self.__setattr__(key, self.cfg['trainer'][key])
 
 
 class MultiSourceTrainer(Trainer):
