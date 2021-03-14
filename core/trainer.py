@@ -165,7 +165,8 @@ class Trainer(object):
             self.callbacks.after_train_once(locals())
 
             # 重新读取配置文件并刷新
-            self.reload_cfg()
+            if self.cfg is not None:
+                self.reload_cfg()
 
             # 如果达到验证间隔
             if (epoch + 1) % self.validate_every == 0:
