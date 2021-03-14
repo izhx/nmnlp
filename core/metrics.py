@@ -87,7 +87,7 @@ class TaggingMetric(Metric):
 
     @staticmethod
     def metric_factory(f1=.0, recall=.0, precision=.0) -> Dict:
-        return Dict(F1=f1, recall=recall, precision=precision)
+        return dict(F1=f1, recall=recall, precision=precision)
 
     def get_metric(self, counter=None, reset=False) -> Dict:
         c = counter or self.counter
