@@ -33,8 +33,8 @@ SAVE_STRATEGY_ALL = 'all'
 SAVE_STRATEGY_BEST = 'best'
 SAVE_STRATEGY_SKIP = 'skip'  # every 2
 
-DEFAULT_MODEL_SAVE_DIR = './exp/'
-DEFAULT_LOG_DIR = './tblog/'
+DEFAULT_MODEL_SAVE_DIR = './dev/model/'
+DEFAULT_LOG_DIR = './dev/tblog/'
 DEFAULT_PREFIX = 'model_'
 
 DEVICE_CPU = 'cpu'
@@ -381,7 +381,8 @@ class Trainer(object):
             checkpoint = self.model.state_dict()
 
         torch.save(checkpoint, self.pre_train_path)
-        save_yaml(self.cfg)
+        if self.cfg is not None:
+            save_yaml(self.cfg)
         output(f"===> Checkpoint saved at <{self.pre_train_path}>")
 
     def load(self):
