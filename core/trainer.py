@@ -44,7 +44,7 @@ CALLBACKS = ('before_time_start', 'before_epoch_start', 'after_collate_batch',
              'before_batch_forward', 'after_batch_forward', 'before_next_batch',
              'after_epoch_end', 'after_dev_end', 'before_test_start',
              'after_log_loss', 'after_process_one', 'before_train_once',
-             'after_train_once')
+             'after_train_once', 'before_dev_start')
 
 CLIP_GRAD = dict(method='norm', max_norm=5.0)
 
@@ -282,6 +282,8 @@ class Trainer(object):
     def _eval_once(self, epoch: int, dataset: DataSet):
         self.model.eval()
         time_eval_start = time.time()
+
+        self.callbacks.before_dev_start(dataset, self, locals())
 
         with torch.no_grad():
             metric, _, losses = self.process_one(dataset, '', self.device, self.batch_size, epoch)
