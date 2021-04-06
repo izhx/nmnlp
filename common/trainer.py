@@ -16,9 +16,9 @@ from torch.nn.utils import clip_grad_norm_, clip_grad_value_
 from torch.optim.optimizer import Optimizer  # pylint: disable=no-name-in-module
 from torch.utils.data import DataLoader, Sampler
 
-from ..common.config import load_yaml, save_yaml
-from ..common.util import sec_to_time, output, to_device
-from ..common.writer import Writer
+from .config import load_yaml, save_yaml
+from .util import sec_to_time, printf, dict_to_device
+from .writer import Writer
 from .dataset import DataSet
 from .optim import get_lrs
 from .metrics import a_better_than_b, namespace_add
@@ -154,7 +154,7 @@ class Trainer(object):
 
         self.callbacks.before_time_start(self.dataset, self, locals())
 
-        output(f"Training started at epoch {epoch} ...")
+        printf(f"Training started at epoch {epoch} ...")
         time_start = time.time()
 
         # 当代数小于指定数目 且 没有early stop时，持续循环
@@ -194,12 +194,12 @@ class Trainer(object):
             # 如果启用了early stop 且 计数器达到阈值，提前终止训练。
             if self.early_stop and stop_counter > EARLY_STOP_THRESHOLD:
                 run_flag = False
-                output('Early stoped!')
+                printf('Early stoped!')
             epoch += 1
 
         time_train = time.time() - time_start
-        output(f'training compete, time: {sec_to_time(time_train)} .')
-        output(f"Best epoch: {best_epoch}, "
+        printf(f'training compete, time: {sec_to_time(time_train)} .')
+        printf(f"Best epoch: {best_epoch}, "
                f"{format_metric(self.model.metric.best)}")
         if self.writer:
             self.writer.close()
@@ -214,7 +214,7 @@ class Trainer(object):
         forward_func = forward_func or self.model.forward
         loader = self.get_loader(
             self.dataset.train, shuffle=self.sampler is None, sampler=self.sampler)
-        output(f"Epoch: {epoch}, batch num: {len(loader)}.")
+        printf(f"Epoch: {epoch}, batch num: {len(loader)}.")
         self.model.to(self.device)
         self.model.train()
         self.callbacks.before_epoch_start(locals())
@@ -234,7 +234,7 @@ class Trainer(object):
             scalars['loss_variance'] = losses.var()
             self.writer.add_scalars(scalar_group, scalars, epoch)
 
-        output(f"{scalar_group} {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
+        printf(f"{scalar_group} {epoch} compete, epoch_loss: {loss_epoch:.4f}, "
                f"time: {sec_to_time(self.time_epoch)}")
 
     def train_func(
@@ -248,7 +248,7 @@ class Trainer(object):
         for i, (input_dict, batch) in enumerate(loader):
 
             input_dict, *_ = self.callbacks.after_collate_batch(input_dict, batch, locals())
-            input_dict = to_device(input_dict, self.device)
+            input_dict = dict_to_device(input_dict, self.device)
 
             input_dict, *_ = self.callbacks.before_batch_forward(input_dict, locals())
 
@@ -296,7 +296,7 @@ class Trainer(object):
         info['epoch_loss'] = losses.mean().item()
         if self.writer:
             self.writer.add_scalars('Dev', info, epoch)
-        output(f"Eval compete, {format_metric(info)}")
+        printf(f"Eval compete, {format_metric(info)}")
 
         return metric
 
@@ -324,7 +324,7 @@ class Trainer(object):
 
         for i, (input_dict, batch) in enumerate(loader):
             input_dict, *_ = self.callbacks.after_collate_batch(input_dict, batch, locals())
-            input_dict = to_device(input_dict, device)
+            input_dict = dict_to_device(input_dict, device)
 
             input_dict, *_ = self.callbacks.before_batch_forward(input_dict, locals())
 
@@ -346,7 +346,7 @@ class Trainer(object):
         self.callbacks.after_process_one(metric, locals())
 
         if epoch is None:
-            output(f"Test {name} compete, {format_metric(metric)}")
+            printf(f"Test {name} compete, {format_metric(metric)}")
         return metric, metric_counter, losses
 
     def checkpoint(self, epoch: int, comment: str = None):
@@ -378,14 +378,14 @@ class Trainer(object):
         else:
             if hasattr(self.model, 'save'):
                 self.model.save(self.pre_train_path)
-                output(f"===> model saved at <{self.pre_train_path}>")
+                printf(f"===> model saved at <{self.pre_train_path}>")
                 return
             checkpoint = self.model.state_dict()
 
         torch.save(checkpoint, self.pre_train_path)
         if self.cfg is not None:
             save_yaml(self.cfg)
-        output(f"===> Checkpoint saved at <{self.pre_train_path}>")
+        printf(f"===> Checkpoint saved at <{self.pre_train_path}>")
 
     def load(self):
         checkpoint = torch.load(self.pre_train_path, map_location=self.device)
@@ -397,15 +397,15 @@ class Trainer(object):
                 self.scheduler.load_state_dict(checkpoint['scheduler'])
             # TODO writer处理
 
-            output(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
+            printf(f"Loaded checkpoint at epoch {checkpoint['epoch']} "
                    f"from <{self.pre_train_path}>")
         else:
             if hasattr(self.model, 'load'):
                 self.model.load(checkpoint, self.device)
-                output(f"===> Loaded model from <{self.pre_train_path}>")
+                printf(f"===> Loaded model from <{self.pre_train_path}>")
                 return self
             self.model.load_state_dict(checkpoint)
-            output(f"Loaded model checkpoint from <{self.pre_train_path}>")
+            printf(f"Loaded model checkpoint from <{self.pre_train_path}>")
 
         return self
 
@@ -439,7 +439,7 @@ class MultiSourceTrainer(Trainer):
         metric = self.model.metric.get_metric(
             counter=reduce(namespace_add, counters))
         if epoch is None:
-            output(f"All compete, {format_metric(metric)}")
+            printf(f"All compete, {format_metric(metric)}")
         return metric, counters, torch.cat(losses)
 
     def _eval_once(self, epoch: int, dataset: Union[List[DataSet], Dict[str, DataSet]]):
@@ -460,7 +460,7 @@ class MultiSourceTrainer(Trainer):
         if self.writer:
             self.writer.add_scalars('Dev', info, epoch)
             self.writer.flush()
-        output(f"Eval compete, {format_metric(info)}")
+        printf(f"Eval compete, {format_metric(info)}")
 
         return metric
 

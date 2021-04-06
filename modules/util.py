@@ -1,4 +1,3 @@
-import os
 from functools import reduce
 
 import torch

@@ -11,8 +11,8 @@ import numpy
 import torch
 from torch.nn.functional import embedding
 
-from ..common.util import output, get_file_extension
-from ..core import Vocabulary
+from ..common import Vocabulary
+from ..common.util import printf, get_file_extension
 from ..modules import util
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -156,7 +156,7 @@ class Embedding(torch.nn.Module):
         embeddings = dict()
 
         # First we read the embeddings from the file, only keeping vectors for the words we need.
-        output("Reading pretrained embeddings from file")
+        printf("Reading pretrained embeddings from file")
 
         with EmbeddingsTextFile(pretrained_file) as embeddings_file:
             embedding_dim = embeddings_file.embedding_dim
@@ -189,7 +189,7 @@ class Embedding(torch.nn.Module):
         embeddings_std = float(numpy.std(all_embeddings))
         # Now we initialize the weight matrix for an embedding layer, starting with random vectors,
         # then filling in the word vectors we just read.
-        output("Initializing pre-trained embedding layer")
+        printf("Initializing pre-trained embedding layer")
         embedding_matrix = torch.FloatTensor(vocab_size, embedding_dim).normal_(embeddings_mean,
                                                                                 embeddings_std)
         num_tokens_found = 0
@@ -205,7 +205,7 @@ class Embedding(torch.nn.Module):
             else:
                 logger.debug("Token %s was not found in the embedding file. Initialising randomly.", token)
 
-        output(f"Pretrained embeddings were found for {num_tokens_found} out of {vocab_size} tokens")
+        printf(f"Pretrained embeddings were found for {num_tokens_found} out of {vocab_size} tokens")
 
         return cls(num_embeddings=embedding_matrix.size(0),
                    embedding_dim=embedding_matrix.size(1),

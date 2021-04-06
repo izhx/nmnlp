@@ -1,5 +1,5 @@
 """
-为tensorboard，fitlog和自有工具等提供统一接口。
+为tensorboard，fitlog等提供统一接口。
 """
 
 import os
@@ -8,7 +8,7 @@ import warnings
 from enum import Enum, unique
 from typing import Dict
 
-from .util import now, output
+from .util import now, printf
 
 
 @unique
@@ -31,7 +31,7 @@ class Writer(object):
         if os.path.exists(self.log_dir):  # 一般都没有
             shutil.rmtree(self.log_dir)
         os.mkdir(self.log_dir)
-        output(f'Log dir <{self.log_dir}>')
+        printf(f'Log dir <{self.log_dir}>')
 
         if backend in ('logviewer', 'lv', Backend.logviewer.value):
             self.type = Backend.logviewer

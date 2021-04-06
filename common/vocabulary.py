@@ -10,8 +10,8 @@ from argparse import Namespace
 from itertools import chain
 from collections import defaultdict
 
-from ..common.constant import PRETRAIN_POSTFIX
-from ..common.util import output
+from .constant import PRETRAIN_POSTFIX
+from .util import printf
 
 
 DEFAULT_PADDING_TOKEN = "<pad>"
@@ -162,7 +162,7 @@ def _read_pretrained_tokens(embeddings_file: str) -> List[str]:
     # Moving this import to the top breaks everything (cycling import, I guess)
     from ..embedding.embedding import EmbeddingsTextFile
 
-    output(f'Reading pretrained tokens from: <{embeddings_file}>')
+    printf(f'Reading pretrained tokens from: <{embeddings_file}>')
     tokens: List[str] = []
     with EmbeddingsTextFile(embeddings_file) as file:
         for line_number, line in enumerate(file, start=1):

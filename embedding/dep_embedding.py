@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from ..modules.augmented_lstm import BiAugmentedLstm
 from ..modules.dropout import WordDropout
 from ..modules.linear import NonLinear
-from ..common.util import output as printf
+from ..common.util import printf
 
 NUM_UPOSTAG = 18  # 17 + pad
 

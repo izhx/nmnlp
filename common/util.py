@@ -23,22 +23,9 @@ def now(replace=False) -> str:
     return now_str.replace(' ', '_') if replace else now_str
 
 
-def output(*args):
+def printf(*args):
     message = ''.join([str(arg) for arg in args])
     print(f"[{now()}] {message}")
-
-
-def field_match(pattern: str, namespace: str):
-    """
-    Matches a namespace pattern against a namespace string.  For example, ``*tags`` matches
-    ``passage_tags`` and ``question_tags`` and ``tokens`` matches ``tokens`` but not
-    ``stemmed_tokens``.
-    """
-    if pattern[0] == '*' and namespace.endswith(pattern[1:]):
-        return True
-    elif pattern == namespace:
-        return True
-    return False
 
 
 def gpu_memory_mb() -> Dict[int, List[int]]:
@@ -121,14 +108,10 @@ def set_visible_devices(cuda_ids: str) -> Union[torch.device, List[torch.device]
     return torch.device('cuda:0')
 
 
-def to_device(data, device: torch.device):
-    if torch.is_tensor(data):
-        data = data.to(device)
-    elif isinstance(data, dict):
-        data = {k: to_device(v, device) for k, v in data.items()}
-    elif isinstance(data, list):
-        data = [to_device(i, device) for i in data]
-
+def dict_to_device(data: Dict, device: torch.device):
+    for k in data:
+        if torch.is_tensor(data[k]):
+            data[k] = data[k].to(device)
     return data
 
 
@@ -160,18 +143,18 @@ def cache_path(name):
 def dump_cache(data, name):
     with open(cache_path(name), mode='wb') as file:
         pickle.dump(data, file)
-    output(f"file saved at <{cache_path(name)}>")
+    printf(f"file saved at <{cache_path(name)}>")
 
 
 def load_cache(name):
     with open(cache_path(name), mode='rb') as file:
         data = pickle.load(file)
-    output(f"file loaded from <{cache_path(name)}>")
+    printf(f"file loaded from <{cache_path(name)}>")
     return data
 
 
 def loop(device):
-    output("start looping...")
+    printf("start looping...")
     while True:
         time.sleep(0.05)
         a, b = torch.rand(233, 233, 233).to(device), torch.rand(233, 233, 233).to(device)

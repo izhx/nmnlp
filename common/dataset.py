@@ -8,7 +8,7 @@ from collections import defaultdict
 import torch
 from torch.utils.data import Dataset
 
-from ..common.constant import PRETRAIN_POSTFIX
+from .constant import PRETRAIN_POSTFIX
 from .vocabulary import Vocabulary
 
 

@@ -1,8 +1,8 @@
 from typing import Dict, Any
 
-from ..common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
-from ..core.dataset import DataSet
 from .conll import ConlluDataset
+from ..common import DataSet
+from ..common.constant import KEY_TRAIN, KEY_DEV, KEY_TEST
 
 _DATASET = {
     'Conllu': ConlluDataset

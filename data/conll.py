@@ -1,5 +1,5 @@
 """
-Conllu dataset.
+Conllu dataset. TODO
 """
 
 from typing import Any, List, Dict, Set
@@ -13,9 +13,9 @@ from itertools import chain
 
 import torch
 
-from ..common.constant import KEY_TRAIN as KIND_TRAIN
 from ..common.util import output
-from ..core.dataset import DataSet, PRETRAIN_POSTFIX
+from ..common.dataset import DataSet, PRETRAIN_POSTFIX
+from ..common.constant import KEY_TRAIN as KIND_TRAIN
 
 # from conllu import parse_incr
 parse_incr = None

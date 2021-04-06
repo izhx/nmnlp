@@ -4,16 +4,6 @@ import math
 import torch
 import torch.nn as nn
 
-if torch.__version__ < "1.4.0":
-    class GELU(nn.Module):
-        """
-        Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
-        """
-        def forward(self, x):
-            return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-else:
-    from torch.nn import GELU
-
 
 class NonLinear(nn.Module):
     """
@@ -21,12 +11,12 @@ class NonLinear(nn.Module):
     """
 
     def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 activation: Callable = GELU()):
+                 activation: Callable = nn.GELU()):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation
 
-    def forward(self, x: torch.Tensor):  # pylint:disable=arguments-differ
+    def forward(self, x: torch.Tensor):
         x = self.linear(x)
         return self.activation(x)
 
@@ -51,8 +41,8 @@ class Biaffine(nn.Module):
         bound = 1 / math.sqrt(self.weight.size(0))
         nn.init.uniform_(self.weight, -bound, bound)
 
-    def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:  # pylint:disable=arguments-differ
-        b, n1, *_, n2, d2, o = *input1.shape, *input2.shape, self.out_features
+    def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+        (b, n1, _), (_, n2, d2), o = input1.shape, input2.shape, self.out_features
 
         if self.bias[0]:
             input1 = torch.cat([input1, input1.new_ones((b, n1, 1))], -1)

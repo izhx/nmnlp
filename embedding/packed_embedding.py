@@ -6,8 +6,8 @@ from typing import Dict, Any
 
 import torch
 
-from nmnlp.core.vocabulary import Vocabulary, PRETRAIN_POSTFIX
 from .embedding import Embedding
+from ..common.vocabulary import Vocabulary, PRETRAIN_POSTFIX
 from ..modules.encoder import build_encoder
 from ..modules.fusion import Fusion
 
